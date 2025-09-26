@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -101,16 +103,47 @@ fun LandingScreen(navController: NavHostController) {
     val scope = rememberCoroutineScope()
     var showClearSuggestionsDialog by remember { mutableStateOf(false) }
 
+    // Printer selection state
+    val prefs = context.getSharedPreferences("printer_prefs", Context.MODE_PRIVATE)
+    var savedPrinterAddress by remember { mutableStateOf(prefs.getString("saved_printer_address", null)) }
+    var savedPrinterName by remember { mutableStateOf(prefs.getString("saved_printer_name", null)) }
+    var showBluetoothDevices by remember { mutableStateOf(false) }
+    var bluetoothPermissionGranted by remember { mutableStateOf(false) }
+    var printerStatus by remember { mutableStateOf("") }
+
+    // Bluetooth permission launcher for Android 12+
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions: Map<String, Boolean> ->
+        bluetoothPermissionGranted = permissions[Manifest.permission.BLUETOOTH_CONNECT] == true &&
+            permissions[Manifest.permission.BLUETOOTH_SCAN] == true
+        if (bluetoothPermissionGranted) {
+            printerStatus = "Bluetooth permissions granted"
+        }
+    }
+
+    val printerHelper = remember { BluetoothPrinterHelper(context) }
+
+    fun saveSelectedPrinter(address: String, name: String) {
+        prefs.edit {
+            putString("saved_printer_address", address)
+            putString("saved_printer_name", name)
+        }
+        savedPrinterAddress = address
+        savedPrinterName = name
+        printerStatus = "Printer selected: $name"
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .padding(horizontal = 24.dp, vertical = 4.dp) // Reduced vertical padding from 16.dp to 4.dp
             .windowInsetsPadding(WindowInsets.systemBars),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp), // Reduced spacing from 16.dp to 12.dp
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         item {
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp)) // Reduced from 32.dp to 24.dp
         }
 
         item {
@@ -130,18 +163,110 @@ fun LandingScreen(navController: NavHostController) {
         }
 
         item {
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp)) // Reduced from 24.dp to 16.dp
+        }
+
+        // Printer Selection Card
+        item {
+            PrinterSelectionCard(
+                savedPrinterName = savedPrinterName,
+                bluetoothPermissionGranted = bluetoothPermissionGranted,
+                onSelectPrinter = {
+                    if (!bluetoothPermissionGranted) {
+                        bluetoothPermissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.BLUETOOTH_CONNECT,
+                                Manifest.permission.BLUETOOTH_SCAN
+                            )
+                        )
+                    } else {
+                        showBluetoothDevices = true
+                        printerStatus = ""
+                    }
+                },
+                onRequestPermissions = {
+                    bluetoothPermissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            Manifest.permission.BLUETOOTH_SCAN
+                        )
+                    )
+                }
+            )
+        }
+
+        // Status messages
+        if (printerStatus.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (printerStatus.contains("selected") || printerStatus.contains("granted"))
+                            MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Text(
+                        text = printerStatus,
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (printerStatus.contains("selected") || printerStatus.contains("granted"))
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+        }
+
+        // Bluetooth device selection
+        if (showBluetoothDevices) {
+            item {
+                BluetoothDeviceSelectionCard(
+                    printerHelper = printerHelper,
+                    context = context,
+                    onDeviceSelected = { device ->
+                        showBluetoothDevices = false
+                        saveSelectedPrinter(device.address, device.name ?: "Unknown Printer")
+                    },
+                    onDismiss = { showBluetoothDevices = false }
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
         item {
             Button(
                 onClick = { navController.navigate(Screen.Receipt.route) },
+                enabled = savedPrinterAddress != null, // Only enable if printer is selected
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("Create Receipt", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
+        // Show message when no printer is selected
+        if (savedPrinterAddress == null) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+                    )
+                ) {
+                    Text(
+                        text = "⚠️ Please select a printer above to create receipts",
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
 
@@ -391,9 +516,9 @@ AMOUNT: Rs. $amount
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .padding(horizontal = 20.dp, vertical = 4.dp) // Reduced vertical padding from 8.dp to 4.dp
             .windowInsetsPadding(WindowInsets.systemBars),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp) // Reduced spacing from 12.dp to 10.dp
     ) {
         item(key = "form_card") {
             // Form card
@@ -402,8 +527,8 @@ AMOUNT: Rs. $amount
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                    modifier = Modifier.padding(18.dp), // Reduced padding from 20.dp to 18.dp
+                    verticalArrangement = Arrangement.spacedBy(12.dp) // Reduced spacing from 14.dp to 12.dp
                 ) {
                     Text(
                         "Create Receipt",
@@ -561,7 +686,7 @@ AMOUNT: Rs. $amount
         }
 
         item(key = "bottom_spacer") {
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(12.dp)) // Reduced bottom spacer from 20.dp to 12.dp
         }
     }
 }
@@ -778,6 +903,112 @@ private fun BluetoothDeviceSelectionCard(
 }
 
 @Composable
+private fun PrinterSelectionCard(
+    savedPrinterName: String?,
+    bluetoothPermissionGranted: Boolean,
+    onSelectPrinter: () -> Unit,
+    onRequestPermissions: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "Printer Selection",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            if (savedPrinterName != null) {
+                // Show current selected printer
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                "Selected Printer:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                savedPrinterName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Selected",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            } else {
+                // No printer selected
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Text(
+                        "No printer selected",
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+
+            // Select/Change printer button
+            Button(
+                onClick = {
+                    if (bluetoothPermissionGranted) {
+                        onSelectPrinter()
+                    } else {
+                        onRequestPermissions()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    if (savedPrinterName != null) "Change Printer" else "Select Printer",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+
+            if (!bluetoothPermissionGranted) {
+                Text(
+                    "Bluetooth permissions required to select printer",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun EditReceiptDialog(
     receipt: Receipt,
     onDismiss: () -> Unit,
@@ -933,9 +1164,9 @@ fun ReportsScreen(navController: NavHostController) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(12.dp) // Reduced padding from 16.dp to 12.dp
             .windowInsetsPadding(WindowInsets.systemBars),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp) // Reduced spacing from 16.dp to 12.dp
     ) {
         item(key = "header") {
             Text(
@@ -1100,61 +1331,54 @@ private fun BillerCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Biller header with total and delete button
+            // First line: Biller name and receipt count
+            Text(
+                text = "$biller : ${billerReceipts.size} ${if (billerReceipts.size == 1) "receipt" else "receipts"}",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Second line: Total amount and delete button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = biller,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
+                ) {
                     Text(
-                        text = "${billerReceipts.size} receipts",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "Total: Rs. ${String.format(Locale.getDefault(), "%.2f", total)}",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Delete Biller Button
+                OutlinedButton(
+                    onClick = onDeleteAll,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.height(40.dp)
                 ) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) {
-                        Text(
-                            text = "Total: Rs. ${String.format(Locale.getDefault(), "%.2f", total)}",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-
-                    // Delete Biller Button
-                    OutlinedButton(
-                        onClick = onDeleteAll,
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        ),
-                        modifier = Modifier.height(40.dp)
-                    ) {
-                        Text(
-                            "Delete All",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
+                    Text(
+                        "Delete All",
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Use items for individual receipts with stable keys
+            // Below: All the receipts
             billerReceipts.forEach { receipt ->
                 key(receipt.id) {
                     ReceiptCard(
