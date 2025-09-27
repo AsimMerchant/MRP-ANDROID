@@ -1,6 +1,5 @@
 package com.example.mobilereceiptprinter
 
-import android.net.nsd.NsdServiceInfo
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,23 +17,14 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeviceListScreen(discoveryHelper: DeviceDiscoveryHelper) {
-    val discoveredDevices = remember { mutableStateListOf<NsdServiceInfo>() }
-
-    // Start discovery on enter, stop on exit
-    LaunchedEffect(Unit) {
-        discoveryHelper.discoverServices { device ->
-            if (discoveredDevices.none { it.serviceName == device.serviceName }) {
-                discoveredDevices.add(device)
-            }
-        }
-    }
-    DisposableEffect(Unit) {
-        onDispose { discoveryHelper.stopDiscovery() }
-    }
+    // Use the global device list that's maintained throughout app lifecycle
+    val discoveredDevices = discoveryHelper.globalDiscoveredDevices
+    
+    // No local discovery needed - using global discovery started at app launch
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Discovered Devices") })
+            TopAppBar(title = { Text("Show Discovered Devices") })
         }
     ) { padding ->
         LazyColumn(
@@ -44,9 +34,36 @@ fun DeviceListScreen(discoveryHelper: DeviceDiscoveryHelper) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Debug info
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("Debug Info:", style = MaterialTheme.typography.titleSmall)
+                        Text(discoveryHelper.getServiceInfo(), style = MaterialTheme.typography.bodySmall)
+                        Text("Devices found: ${discoveredDevices.size}", style = MaterialTheme.typography.bodySmall)
+                        Text(discoveryHelper.getDiscoveryStatus(), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            
             if (discoveredDevices.isEmpty()) {
                 item {
-                    Text("No devices found.", style = MaterialTheme.typography.bodyLarge)
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("No devices found yet.", style = MaterialTheme.typography.bodyLarge)
+                            Text("Real-time discovery active.", style = MaterialTheme.typography.bodyMedium)
+                            Text("Make sure:", style = MaterialTheme.typography.titleSmall)
+                            Text("• Both devices are on the same WiFi", style = MaterialTheme.typography.bodySmall)
+                            Text("• Both devices have the MRP app open", style = MaterialTheme.typography.bodySmall)
+                            Text("• Devices appear instantly and disappear within 5 seconds", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
             } else {
                 items(discoveredDevices) { device ->
@@ -55,8 +72,8 @@ fun DeviceListScreen(discoveryHelper: DeviceDiscoveryHelper) {
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Column(Modifier.padding(12.dp)) {
-                            Text("Name: ${device.serviceName}", style = MaterialTheme.typography.titleMedium)
-                            Text("Host: ${device.host}", style = MaterialTheme.typography.bodySmall)
+                            Text("Name: ${device.name}", style = MaterialTheme.typography.titleMedium)
+                            Text("Host: ${device.address}", style = MaterialTheme.typography.bodySmall)
                             Text("Port: ${device.port}", style = MaterialTheme.typography.bodySmall)
                         }
                     }

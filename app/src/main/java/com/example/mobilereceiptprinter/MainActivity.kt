@@ -66,20 +66,49 @@ sealed class Screen(val route: String) {
 }
 
 class MainActivity : ComponentActivity() {
+    private lateinit var discoveryHelper: DeviceDiscoveryHelper
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Initialize discovery helper at activity level
+        discoveryHelper = DeviceDiscoveryHelper(this)
+        
         setContent {
             MobileReceiptPrinterTheme {
-                val context = this
-                // Start device discovery and registration on app start
-                val discoveryHelper = remember { DeviceDiscoveryHelper(context) }
-                // Register this device on a random port (for now, use 53535)
+                // Start device discovery on app launch
                 LaunchedEffect(Unit) {
-                    discoveryHelper.registerService(53535)
+                    try {
+                        // Register this device first
+                        discoveryHelper.registerService(53535)
+                        // Start fresh real-time discovery (clears any stale state)
+                        discoveryHelper.startGlobalDiscovery()
+                        android.util.Log.d("MainActivity", "✅ Started fresh real-time device discovery")
+                    } catch (e: Exception) {
+                        // Handle discovery start failure
+                        android.util.Log.e("MainActivity", "Failed to start device discovery", e)
+                    }
                 }
+                
                 MainApp(discoveryHelper)
             }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Unregister service when app goes to background to prevent stale registrations
+        if (::discoveryHelper.isInitialized) {
+            discoveryHelper.unregisterService()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Clean up discovery when app closes
+        if (::discoveryHelper.isInitialized) {
+            discoveryHelper.stopGlobalDiscovery()
         }
     }
 }
@@ -251,8 +280,40 @@ fun LandingScreen(navController: NavHostController, discoveryHelper: DeviceDisco
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // ...existing code...
-        // Add a button to navigate to the device list screen as a top-level item
+        item {
+            Button(
+                onClick = { navController.navigate(Screen.Receipt.route) },
+                enabled = savedPrinterAddress != null, // Only enable if printer is selected
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Create Receipt", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
+        // Show message when no printer is selected
+        if (savedPrinterAddress == null) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+                    )
+                ) {
+                    Text(
+                        text = "⚠️ Please select a printer above to create receipts",
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        // Add device discovery as additional functionality
         item {
             OutlinedButton(
                 onClick = { navController.navigate("device_list") },
