@@ -71,14 +71,21 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MobileReceiptPrinterTheme {
-                MainApp()
+                val context = this
+                // Start device discovery and registration on app start
+                val discoveryHelper = remember { DeviceDiscoveryHelper(context) }
+                // Register this device on a random port (for now, use 53535)
+                LaunchedEffect(Unit) {
+                    discoveryHelper.registerService(53535)
+                }
+                MainApp(discoveryHelper)
             }
         }
     }
 }
 
 @Composable
-fun MainApp() {
+fun MainApp(discoveryHelper: DeviceDiscoveryHelper) {
     val navController = rememberNavController()
     Scaffold(
         modifier = Modifier.fillMaxSize()
@@ -90,18 +97,22 @@ fun MainApp() {
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            composable(Screen.Landing.route) { LandingScreen(navController) }
+            composable(Screen.Landing.route) { LandingScreen(navController, discoveryHelper) }
             composable(Screen.Receipt.route) { ReceiptScreen(navController) }
             composable(Screen.Reports.route) { ReportsScreen(navController) }
+            // New route for discovered devices menu
+            composable("device_list") { DeviceListScreen(discoveryHelper) }
         }
     }
 }
 
 @Composable
-fun LandingScreen(navController: NavHostController) {
+fun LandingScreen(navController: NavHostController, discoveryHelper: DeviceDiscoveryHelper) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showClearSuggestionsDialog by remember { mutableStateOf(false) }
+
+    // Removed discovered devices state from LandingScreen
 
     // Printer selection state
     val prefs = context.getSharedPreferences("printer_prefs", Context.MODE_PRIVATE)
@@ -142,6 +153,9 @@ fun LandingScreen(navController: NavHostController) {
         verticalArrangement = Arrangement.spacedBy(12.dp), // Reduced spacing from 16.dp to 12.dp
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        item {
+            // ...existing code...
+        }
         item {
             Spacer(modifier = Modifier.height(24.dp)) // Reduced from 32.dp to 24.dp
         }
@@ -237,36 +251,20 @@ fun LandingScreen(navController: NavHostController) {
             Spacer(modifier = Modifier.height(16.dp))
         }
 
+        // ...existing code...
+        // Add a button to navigate to the device list screen as a top-level item
         item {
-            Button(
-                onClick = { navController.navigate(Screen.Receipt.route) },
-                enabled = savedPrinterAddress != null, // Only enable if printer is selected
+            OutlinedButton(
+                onClick = { navController.navigate("device_list") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
             ) {
-                Text("Create Receipt", style = MaterialTheme.typography.bodyLarge)
-            }
-        }
-
-        // Show message when no printer is selected
-        if (savedPrinterAddress == null) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
-                    )
-                ) {
-                    Text(
-                        text = "⚠️ Please select a printer above to create receipts",
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                Text("Show Discovered Devices", style = MaterialTheme.typography.bodyLarge)
             }
         }
 
