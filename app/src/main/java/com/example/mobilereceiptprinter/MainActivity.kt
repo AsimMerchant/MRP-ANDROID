@@ -343,8 +343,9 @@ fun ReceiptScreen(navController: NavHostController) {
     var amount by remember { mutableStateOf("") }
     var showPreview by remember { mutableStateOf(false) }
     var receiptNumber by remember { mutableStateOf(1) }
-    val currentDate = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
-    val currentTime = remember { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()) }
+    // Remove remembered static date/time; we will capture fresh timestamps at creation time
+    fun nowDate(): String = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+    fun nowTime(): String = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
     var showBluetoothDevices by remember { mutableStateOf(false) }
     var printStatus by remember { mutableStateOf("") }
     var showShareOptions by remember { mutableStateOf(false) }
@@ -387,13 +388,13 @@ fun ReceiptScreen(navController: NavHostController) {
         }
     }
 
-    // Receipt format matching response.php exactly with proper formatting
-    val receiptText = """
+    // Build receipt text dynamically when printing (uses latest values)
+    fun buildReceiptText(date: String, time: String) = """
 =======================
 \\u001B\\u0021\\u0030 RECEIPT #$receiptNumber \\u001B\\u0021\\u0000
 =======================
-Date: $currentDate
-Time: $currentTime
+Date: $date
+Time: $time
 -----------------------
 Biller: $biller
 -----------------------
@@ -408,7 +409,7 @@ Volunteer: $volunteer
 """.trimIndent()
 
     // Clean version for preview display (without ESC/POS commands)
-    val receiptPreviewText = """
+    fun buildReceiptPreviewText() = """
 
 RECEIPT #$receiptNumber     
 Biller: $biller
@@ -427,6 +428,10 @@ AMOUNT: Rs. $amount
             printStatus = "Bluetooth permission not granted."
             return
         }
+        // Use fresh timestamp at the moment of print (may differ from creation time if delayed)
+        val printDate = nowDate()
+        val printTime = nowTime()
+        val receiptText = buildReceiptText(printDate, printTime)
         val connected = printerHelper.connectToDevice(device)
         if (connected) {
             val printed = printerHelper.printText(receiptText)
@@ -453,15 +458,19 @@ AMOUNT: Rs. $amount
         }
         showPreview = true
 
-        // Auto-save the receipt
+        // Capture creation timestamp exactly now
+        val creationDate = nowDate()
+        val creationTime = nowTime()
+
+        // Auto-save the receipt with fresh timestamps
         val amountValue = amount.toDoubleOrNull() ?: 0.0
         val receipt = Receipt(
             receiptNumber = receiptNumber,
             biller = biller,
             volunteer = volunteer,
             amount = amount,
-            date = currentDate,
-            time = currentTime
+            date = creationDate,
+            time = creationTime
         )
         (context as ComponentActivity).lifecycleScope.launch {
             val db = AppDatabase.getDatabase(context)
@@ -634,7 +643,7 @@ AMOUNT: Rs. $amount
         if (showPreview) {
             item(key = "receipt_preview") {
                 ReceiptPreviewCard(
-                    receiptPreviewText = receiptPreviewText
+                    receiptPreviewText = buildReceiptPreviewText()
                 )
             }
 

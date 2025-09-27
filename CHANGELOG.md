@@ -5,6 +5,21 @@ All notable changes to the Mobile Receipt Printer project will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Receipt creation now records the exact timestamp at the moment the user presses the in-form "Create Receipt" action (previously it reused the time from when the screen first opened).
+- Printed receipt text now uses a fresh timestamp at print time, ensuring print output reflects the actual print moment.
+
+### Changed
+- Time precision increased from minutes (HH:mm) to seconds (HH:mm:ss) for newly created and printed receipts. Existing stored receipts remain with their original minute-level time; no migration required.
+
+### Notes
+- Database schema unchanged (reused existing `date` and `time` fields). No migration required.
+- Creation time and print time may differ if there is a delay between creation and printing; only creation time is persisted currently.
+- Future enhancement (optional): add a nullable `printTime` column if audit of print latency becomes important.
+
+
 ## [11.0.0] - 2025-09-26
 
 ### 🎉 Major Release
