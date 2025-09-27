@@ -34,4 +34,7 @@ interface ReceiptDao {
 
     @Query("DELETE FROM receipts")
     suspend fun deleteAllReceipts()
+    
+    @Query("SELECT * FROM receipts WHERE id > :afterId ORDER BY id DESC")
+    suspend fun getReceiptsAfterId(afterId: Int): List<Receipt>
 }

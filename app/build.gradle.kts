@@ -55,6 +55,12 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
+    
+    // HTTP Server for report sharing
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    
+    // JSON serialization for API responses
+    implementation("com.google.code.gson:gson:2.10.1")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

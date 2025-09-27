@@ -20,8 +20,14 @@ data class DiscoveredDevice(
     val port: Int
 )
 
-class DeviceDiscoveryHelper(private val context: Context) {
+class DeviceDiscoveryHelper(
+    private val context: Context,
+    private val database: AppDatabase
+) {
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
+    
+    // HTTP Server for sharing reports
+    private var reportServer: ReportServer? = null
     
     // Global device list that persists throughout app lifecycle
     private val _globalDiscoveredDevices = mutableStateListOf<DiscoveredDevice>()
@@ -106,41 +112,47 @@ class DeviceDiscoveryHelper(private val context: Context) {
         return "Service: $serviceName | Type: $serviceType"
     }
 
-    fun registerService(port: Int) {
-        Log.d("DeviceDiscovery", "🚀 Attempting to register service:")
-        Log.d("DeviceDiscovery", "   Name: '$serviceName' (length: ${serviceName.length})")
-        Log.d("DeviceDiscovery", "   Type: '$serviceType' (length: ${serviceType.length})")
-        Log.d("DeviceDiscovery", "   Port: $port")
-        
-        // Enhanced validation for Android 15 compatibility
-        if (serviceName.isBlank()) {
-            Log.e("DeviceDiscovery", "❌ Service name is blank!")
-            return
-        }
-        if (serviceType.isBlank()) {
-            Log.e("DeviceDiscovery", "❌ Service type is blank!")
-            return
-        }
-        
-        // Additional Android 15 validations
-        if (serviceName.length > 63) {
-            Log.e("DeviceDiscovery", "❌ Service name too long: ${serviceName.length} chars")
-            return
-        }
-        
-        // Check for invalid characters (Android 15 is stricter)
-        val invalidChars = Regex("[^a-zA-Z0-9._-]")
-        if (invalidChars.containsMatchIn(serviceName)) {
-            Log.e("DeviceDiscovery", "❌ Service name contains invalid characters")
-            return
-        }
+    fun registerService(port: Int = 0) {
+        Log.d("DeviceDiscovery", "🚀 Attempting to register service with ReportServer integration")
         
         try {
+            // First, start the HTTP server for report sharing
+            reportServer = ReportServer(context, database, port)
+            val actualPort = reportServer!!.startServer()
+            
+            Log.d("DeviceDiscovery", "📊 ReportServer started on port: $actualPort")
+            Log.d("DeviceDiscovery", "🚀 Registering NSD service:")
+            Log.d("DeviceDiscovery", "   Name: '$serviceName' (length: ${serviceName.length})")
+            Log.d("DeviceDiscovery", "   Type: '$serviceType' (length: ${serviceType.length})")
+            Log.d("DeviceDiscovery", "   Port: $actualPort (ReportServer port)")
+            
+            // Enhanced validation for Android 15 compatibility
+            if (serviceName.isBlank()) {
+                Log.e("DeviceDiscovery", "❌ Service name is blank!")
+                return
+            }
+            if (serviceType.isBlank()) {
+                Log.e("DeviceDiscovery", "❌ Service type is blank!")
+                return
+            }
+            
+            // Additional Android 15 validations
+            if (serviceName.length > 63) {
+                Log.e("DeviceDiscovery", "❌ Service name too long: ${serviceName.length} chars")
+                return
+            }
+            
+            // Check for invalid characters (Android 15 is stricter)
+            val invalidChars = Regex("[^a-zA-Z0-9._-]")
+            if (invalidChars.containsMatchIn(serviceName)) {
+                Log.e("DeviceDiscovery", "❌ Service name contains invalid characters")
+                return
+            }
             val serviceInfo = NsdServiceInfo().apply {
                 // Explicit assignment to avoid any scoping issues
                 this.serviceName = this@DeviceDiscoveryHelper.serviceName
                 this.serviceType = this@DeviceDiscoveryHelper.serviceType
-                this.port = port
+                this.port = actualPort  // Use the ReportServer's actual port
             }
             
             // Android 15 specific: Additional validation before registration
@@ -181,13 +193,27 @@ class DeviceDiscoveryHelper(private val context: Context) {
             nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
         } catch (e: Exception) {
             Log.e("DeviceDiscovery", "Failed to register service", e)
+            // Cleanup ReportServer if NSD registration fails
+            reportServer?.let {
+                Log.d("DeviceDiscovery", "📊 Cleaning up ReportServer due to registration failure")
+                it.stopServer()
+                reportServer = null
+            }
         }
     }
 
     fun unregisterService() {
         try {
+            // Stop HTTP server first
+            reportServer?.let {
+                Log.d("DeviceDiscovery", "📊 Stopping ReportServer")
+                it.stopServer()
+                reportServer = null
+            }
+            
+            // Then unregister NSD service
             registrationListener?.let { 
-                Log.d("DeviceDiscovery", "🔄 Unregistering service: $serviceName")
+                Log.d("DeviceDiscovery", "🔄 Unregistering NSD service: $serviceName")
                 nsdManager.unregisterService(it)
                 Log.d("DeviceDiscovery", "✅ Service unregistration initiated: $serviceName")
             } ?: run {

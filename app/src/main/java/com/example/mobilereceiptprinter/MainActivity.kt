@@ -72,16 +72,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
-        // Initialize discovery helper at activity level
-        discoveryHelper = DeviceDiscoveryHelper(this)
+        // Initialize discovery helper at activity level with database
+        val database = AppDatabase.getDatabase(this)
+        discoveryHelper = DeviceDiscoveryHelper(this, database)
         
         setContent {
             MobileReceiptPrinterTheme {
                 // Start device discovery on app launch
                 LaunchedEffect(Unit) {
                     try {
-                        // Register this device first
-                        discoveryHelper.registerService(53535)
+                        // Register this device first (ReportServer will auto-assign port)
+                        discoveryHelper.registerService()
                         // Start fresh real-time discovery (clears any stale state)
                         discoveryHelper.startGlobalDiscovery()
                         android.util.Log.d("MainActivity", "✅ Started fresh real-time device discovery")
