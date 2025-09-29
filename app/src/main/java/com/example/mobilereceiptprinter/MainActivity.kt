@@ -1017,125 +1017,7 @@ private fun PrinterSelectionCard(
     }
 }
 
-@Composable
-fun EditReceiptDialog(
-    receipt: Receipt,
-    onDismiss: () -> Unit,
-    onSave: (Receipt) -> Unit,
-    onDelete: (Receipt) -> Unit
-) {
-    var biller by remember { mutableStateOf(receipt.biller) }
-    var volunteer by remember { mutableStateOf(receipt.volunteer) }
-    var amount by remember { mutableStateOf(receipt.amount) }
-    var showDeleteConfirmation by remember { mutableStateOf(false) }
 
-    // Memoize form validation
-    val isFormValid = remember(biller, volunteer, amount) {
-        biller.isNotBlank() && volunteer.isNotBlank() && amount.isNotBlank()
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("Edit Receipt #${receipt.receiptNumber}")
-        },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                OutlinedTextField(
-                    value = biller,
-                    onValueChange = { biller = it },
-                    label = { Text("Biller Name") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = volunteer,
-                    onValueChange = { volunteer = it },
-                    label = { Text("Volunteer Name") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Amount (Rs.)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Text(
-                    text = "Date: ${receipt.date} • Time: ${receipt.time}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        confirmButton = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                TextButton(
-                    onClick = { showDeleteConfirmation = true },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Delete")
-                }
-
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
-
-                Button(
-                    onClick = {
-                        val updatedReceipt = receipt.copy(
-                            biller = biller,
-                            volunteer = volunteer,
-                            amount = amount
-                        )
-                        onSave(updatedReceipt)
-                    },
-                    enabled = isFormValid
-                ) {
-                    Text("Save")
-                }
-            }
-        }
-    )
-
-    // Delete confirmation dialog
-    if (showDeleteConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text("Delete Receipt") },
-            text = { Text("Are you sure you want to delete Receipt #${receipt.receiptNumber}? This action cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onDelete(receipt)
-                        showDeleteConfirmation = false
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmation = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
 
 @Composable
 fun ReportsScreen(navController: NavHostController) {
@@ -1144,8 +1026,6 @@ fun ReportsScreen(navController: NavHostController) {
     val billers = remember { mutableStateListOf<String>() }
     val scope = rememberCoroutineScope()
     var selectedBiller by remember { mutableStateOf<String?>(null) }
-    var editingReceipt by remember { mutableStateOf<Receipt?>(null) }
-    var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteBillerDialog by remember { mutableStateOf(false) }
     var billerToDelete by remember { mutableStateOf<String?>(null) }
 
@@ -1212,10 +1092,6 @@ fun ReportsScreen(navController: NavHostController) {
                     onDeleteAll = {
                         billerToDelete = biller
                         showDeleteBillerDialog = true
-                    },
-                    onEditReceipt = { receipt ->
-                        editingReceipt = receipt
-                        showEditDialog = true
                     }
                 )
             }
@@ -1279,47 +1155,7 @@ fun ReportsScreen(navController: NavHostController) {
         )
     }
 
-    // Edit Dialog
-    if (showEditDialog && editingReceipt != null) {
-        EditReceiptDialog(
-            receipt = editingReceipt!!,
-            onDismiss = {
-                showEditDialog = false
-                editingReceipt = null
-            },
-            onSave = { updatedReceipt ->
-                scope.launch {
-                    val db = AppDatabase.getDatabase(context)
-                    withContext(Dispatchers.IO) {
-                        db.receiptDao().update(updatedReceipt)
-                    }
-                    // Refresh the list
-                    val allReceipts = withContext(Dispatchers.IO) { db.receiptDao().getAllReceipts() }
-                    receipts.clear()
-                    receipts.addAll(allReceipts)
-                    showEditDialog = false
-                    editingReceipt = null
-                }
-            },
-            onDelete = { receiptToDelete ->
-                scope.launch {
-                    val db = AppDatabase.getDatabase(context)
-                    withContext(Dispatchers.IO) {
-                        db.receiptDao().delete(receiptToDelete)
-                    }
-                    // Refresh the list
-                    val allReceipts = withContext(Dispatchers.IO) { db.receiptDao().getAllReceipts() }
-                    val allBillers = withContext(Dispatchers.IO) { db.receiptDao().getAllBillers() }
-                    receipts.clear()
-                    receipts.addAll(allReceipts)
-                    billers.clear()
-                    billers.addAll(allBillers)
-                    showEditDialog = false
-                    editingReceipt = null
-                }
-            }
-        )
-    }
+
 }
 
 // Extracted optimized BillerCard component to reduce recomposition
@@ -1327,8 +1163,7 @@ fun ReportsScreen(navController: NavHostController) {
 private fun BillerCard(
     biller: String,
     billerReceipts: List<Receipt>,
-    onDeleteAll: () -> Unit,
-    onEditReceipt: (Receipt) -> Unit
+    onDeleteAll: () -> Unit
 ) {
     // Memoize total calculation
     val total = remember(billerReceipts) {
@@ -1391,8 +1226,7 @@ private fun BillerCard(
             billerReceipts.forEach { receipt ->
                 key(receipt.id) {
                     ReceiptCard(
-                        receipt = receipt,
-                        onEdit = { onEditReceipt(receipt) }
+                        receipt = receipt
                     )
                 }
             }
@@ -1403,8 +1237,7 @@ private fun BillerCard(
 // Extracted optimized ReceiptCard component
 @Composable
 private fun ReceiptCard(
-    receipt: Receipt,
-    onEdit: () -> Unit
+    receipt: Receipt
 ) {
     Card(
         modifier = Modifier
@@ -1415,44 +1248,31 @@ private fun ReceiptCard(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(12.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Receipt #${receipt.receiptNumber}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "${receipt.date} • ${receipt.time}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Volunteer: ${receipt.volunteer}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Rs. ${receipt.amount}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            // Edit button
-            IconButton(onClick = onEdit) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Edit Receipt",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
+            Text(
+                text = "Receipt #${receipt.receiptNumber}",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "${receipt.date} • ${receipt.time}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Volunteer: ${receipt.volunteer}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Rs. ${receipt.amount}",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }
