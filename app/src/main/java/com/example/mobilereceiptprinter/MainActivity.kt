@@ -351,6 +351,9 @@ fun ReceiptScreen(navController: NavHostController) {
     var showShareOptions by remember { mutableStateOf(false) }
     var savedPrinterAddress by remember { mutableStateOf(prefs.getString("saved_printer_address", null)) }
     var bluetoothPermissionGranted by remember { mutableStateOf(false) }
+    var showPrintingDialog by remember { mutableStateOf(false) }
+    var printingProgress by remember { mutableStateOf("") }
+    var isCreatingAndPrinting by remember { mutableStateOf(false) }
 
     // Bluetooth permission launcher for Android 12+
     val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
@@ -451,6 +454,52 @@ AMOUNT: Rs. $amount
         }
     }
 
+    // Print function for dialog workflow
+    fun printToDeviceWithDialog(device: BluetoothDevice) {
+        (context as ComponentActivity).lifecycleScope.launch {
+            try {
+                val printDate = nowDate()
+                val printTime = nowTime()
+                val receiptText = buildReceiptText(printDate, printTime)
+                
+                val connected = printerHelper.connectToDevice(device)
+                if (connected) {
+                    val printed = printerHelper.printText(receiptText)
+                    printerHelper.closeConnection()
+                    saveLastPrinter(device.address)
+                    
+                    if (printed) {
+                        printingProgress = "✓ Receipt printed successfully!"
+                        kotlinx.coroutines.delay(1500)
+                        
+                        // Clear form for next receipt
+                        volunteer = ""
+                        amount = ""
+                        showPreview = false
+                        printStatus = ""
+                        showPrintingDialog = false
+                        isCreatingAndPrinting = false
+                    } else {
+                        printingProgress = "❌ Print failed"
+                        kotlinx.coroutines.delay(2000)
+                        showPrintingDialog = false
+                        isCreatingAndPrinting = false
+                    }
+                } else {
+                    printingProgress = "❌ Could not connect to printer"
+                    kotlinx.coroutines.delay(2000)
+                    showPrintingDialog = false
+                    isCreatingAndPrinting = false
+                }
+            } catch (e: Exception) {
+                printingProgress = "❌ Error: ${e.message}"
+                kotlinx.coroutines.delay(2000)
+                showPrintingDialog = false
+                isCreatingAndPrinting = false
+            }
+        }
+    }
+
     // Auto-save receipt when created
     fun createAndSaveReceipt() {
         if (biller.isNotBlank()) {
@@ -481,6 +530,42 @@ AMOUNT: Rs. $amount
                 db.suggestionDao().addVolunteerSuggestion(volunteer)
             }
             saveBillerData(biller, receiptNumber, amountValue)
+        }
+    }
+
+    // New function: Create receipt and auto-print
+    fun createReceiptAndPrint() {
+        if (!bluetoothPermissionGranted) {
+            printStatus = "Bluetooth permission not granted."
+            return
+        }
+
+        if (savedPrinterAddress == null) {
+            printStatus = "No printer selected. Please select a printer first."
+            return
+        }
+
+        isCreatingAndPrinting = true
+        showPrintingDialog = true
+        printingProgress = "Creating receipt..."
+        
+        // Create and save receipt
+        createAndSaveReceipt()
+        
+        // Start printing process
+        printingProgress = "Connecting to printer..."
+        
+        (context as ComponentActivity).lifecycleScope.launch {
+            val savedDevice = printerHelper.getPairedDevices()?.find { it.address == savedPrinterAddress }
+            if (savedDevice != null) {
+                printingProgress = "Printing receipt..."
+                printToDeviceWithDialog(savedDevice)
+            } else {
+                printingProgress = "Printer not found"
+                isCreatingAndPrinting = false
+                kotlinx.coroutines.delay(2000)
+                showPrintingDialog = false
+            }
         }
     }
 
@@ -615,7 +700,7 @@ AMOUNT: Rs. $amount
 
                     Button(
                         onClick = {
-                            createAndSaveReceipt()
+                            createReceiptAndPrint()
                             focusManager.clearFocus()
 
                             scope.launch {
@@ -628,75 +713,100 @@ AMOUNT: Rs. $amount
                                 volunteerSuggestions.addAll(volunteers)
                             }
                         },
-                        enabled = isFormValid,
+                        enabled = isFormValid && !isCreatingAndPrinting,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Create Receipt", style = MaterialTheme.typography.bodyLarge)
+                        if (isCreatingAndPrinting) {
+                            Text("Creating & Printing...", style = MaterialTheme.typography.bodyLarge)
+                        } else {
+                            Text("Create & Print Receipt", style = MaterialTheme.typography.bodyLarge)
+                        }
                     }
                 }
             }
         }
 
-        if (showPreview) {
+        if (showPreview && !showPrintingDialog) {
             item(key = "receipt_preview") {
                 ReceiptPreviewCard(
                     receiptPreviewText = buildReceiptPreviewText()
                 )
-            }
-
-            item(key = "print_actions") {
-                PrintActionsCard(
-                    savedPrinterAddress = savedPrinterAddress,
-                    bluetoothPermissionGranted = bluetoothPermissionGranted,
-                    onPrint = {
-                        if (!bluetoothPermissionGranted) {
-                            printStatus = "Bluetooth permission not granted."
-                            return@PrintActionsCard
-                        }
-
-                        if (savedPrinterAddress != null) {
-                            val savedDevice = printerHelper.getPairedDevices()?.find { it.address == savedPrinterAddress }
-                            if (savedDevice != null) {
-                                printToDevice(savedDevice)
-                                return@PrintActionsCard
-                            }
-                        }
-
-                        showBluetoothDevices = true
-                        printStatus = ""
-                    }
-                )
-            }
-
-            // Status messages
-            if (printStatus.isNotEmpty()) {
-                item(key = "print_status") {
-                    PrintStatusCard(printStatus = printStatus)
-                }
-            }
-
-            // Bluetooth device selection
-            if (showBluetoothDevices) {
-                item(key = "bluetooth_devices") {
-                    BluetoothDeviceSelectionCard(
-                        printerHelper = printerHelper,
-                        context = context,
-                        onDeviceSelected = { device ->
-                            showBluetoothDevices = false
-                            printToDevice(device)
-                        },
-                        onDismiss = { showBluetoothDevices = false }
-                    )
-                }
             }
         }
 
         item(key = "bottom_spacer") {
             Spacer(modifier = Modifier.height(12.dp)) // Reduced bottom spacer from 20.dp to 12.dp
         }
+    }
+    
+    // Printing Progress Dialog
+    if (showPrintingDialog) {
+        AlertDialog(
+            onDismissRequest = { /* Don't allow dismissal while printing */ },
+            title = { 
+                Text("Creating & Printing Receipt") 
+            },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    if (showPreview) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Text(
+                                text = buildReceiptPreviewText(),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                ),
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (isCreatingAndPrinting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                        Text(
+                            text = printingProgress,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (printingProgress.contains("❌")) 
+                                MaterialTheme.colorScheme.error
+                            else if (printingProgress.contains("✓"))
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (!isCreatingAndPrinting) {
+                    TextButton(
+                        onClick = { 
+                            showPrintingDialog = false
+                            printingProgress = ""
+                        }
+                    ) {
+                        Text("OK")
+                    }
+                }
+            }
+        )
     }
 }
 
