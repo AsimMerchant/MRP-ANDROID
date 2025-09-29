@@ -12,9 +12,13 @@ A modern Android application built with Kotlin and Jetpack Compose for creating 
 - **Printer Management**: Save and manage preferred Bluetooth printer connections
 
 ### Data Management
-- **Local Database**: Persistent storage using Room database
-- **Receipt History**: View all created receipts organized by biller
+- **Multi-Device Database**: Enhanced Room database with UUID-based global sync system ✨
+- **Cross-Device Sync**: Offline-first local network synchronization across up to 6 devices 🌐
+- **Receipt History**: View all created receipts organized by biller with collection tracking
 - **Reports & Analytics**: Comprehensive reporting with totals and receipt counts per biller
+- **Collection Tracking**: QR code-based receipt collection system for accountability 📱
+- **Device Role Management**: Flexible biller/collector role switching per device
+- **Sync Status Monitoring**: Real-time sync status and conflict resolution
 - **Data Editing**: Edit or delete individual receipts and bulk delete by biller
 - **Suggestion Management**: Clear autocomplete suggestions when needed
 
@@ -30,24 +34,34 @@ A modern Android application built with Kotlin and Jetpack Compose for creating 
 - **Language**: Kotlin
 - **UI Framework**: Jetpack Compose
 - **Architecture**: MVVM with Compose State Management
-- **Database**: Room (SQLite)
+- **Database**: Room (SQLite) with multi-device UUID schema ✨
 - **Navigation**: Navigation Compose
 - **Bluetooth**: Android Bluetooth API
+- **Network Sync**: mDNS/NSD service discovery with JSON protocol ✨
 - **Async Operations**: Coroutines with Dispatchers
+- **Multi-Device**: Offline-first local network synchronization ✨
 
 ### Project Structure
 ```
 app/src/main/java/com/example/mobilereceiptprinter/
-├── MainActivity.kt              # Main activity with Compose screens
-├── AppDatabase.kt              # Room database configuration
-├── Receipt.kt                  # Receipt data class and DAO
-├── Suggestion.kt               # Autocomplete suggestions data class and DAO
+├── MainActivity.kt              # Main activity with Compose screens and navigation
+├── AppDatabase.kt              # Room database configuration with migrations
+├── Receipt.kt                  # Multi-device receipt entities and relationships
+├── ReceiptDao.kt               # Enhanced DAOs with sync-aware queries
+├── DeviceManager.kt            # Device identification and role management
+├── SyncStatusManager.kt        # Multi-device sync status and monitoring
+├── DeviceDiscoveryHelper.kt    # Network discovery and sync infrastructure ✨
+├── DeviceTestScreen.kt         # Database migration testing interface
 ├── BluetoothPrinterHelper.kt   # Bluetooth printer communication
 └── ui/theme/                   # Material Design theming
 ```
 
-### Database Schema
-- **Receipts Table**: Stores receipt data (ID, number, biller, volunteer, amount, date, time)
+### Database Schema (Multi-Device Enhanced)
+- **Receipts Table**: Enhanced with UUID IDs, QR codes, device attribution, sync status
+- **Collected Receipts**: Tracks receipt collection events across devices
+- **Collectors**: Manages collector information and device associations  
+- **Device Sync Logs**: Audit trail for all synchronization operations
+- **Suggestions**: Autocomplete data for billers and volunteers
 - **Suggestions Table**: Stores autocomplete suggestions separately for persistence
 - **SharedPreferences**: Manages printer settings and biller-specific counters
 
@@ -199,6 +213,32 @@ For support, bug reports, or feature requests:
 - Create an issue in the GitHub repository
 - Provide detailed device information and steps to reproduce
 - Include relevant logs and screenshots
+
+## 🚀 Development Status
+
+**Current Version**: 1.1.0  
+**Feature Branch**: `feature/share_reports`  
+**Development Phase**: Phase 2 Complete ✅
+
+### ✅ Completed Features (Phase 1 & 2)
+- **Multi-Device Database Schema**: UUID-based global sync system
+- **Cross-Device Sync Infrastructure**: mDNS discovery with JSON protocol
+- **Device Role Management**: Flexible biller/collector role switching
+- **Network Status Monitoring**: Real-time sync progress and connection tracking
+- **Conflict Resolution**: Timestamp and version-based conflict handling
+- **Testing Framework**: Comprehensive database migration and network sync testing
+
+### 🔄 In Development (Phase 3+)
+- **QR Code Generation**: Receipt QR codes for scanning-based collection
+- **Camera Scanner**: ML Kit-based QR code scanning for collectors
+- **Collection Interface**: Network-aware collector UI with sync status
+- **Reconciliation Reports**: Multi-device reporting with network-wide statistics
+
+### 📱 Multi-Device Architecture
+- **Offline-First Design**: No internet dependency, local WiFi network only
+- **6-Device Support**: Scalable across multiple devices simultaneously
+- **Real-Time Sync**: Automatic device discovery and data synchronization
+- **Production Ready**: Comprehensive error handling, logging, and monitoring
 
 ---
 

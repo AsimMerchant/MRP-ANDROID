@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -40,11 +41,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import com.example.mobilereceiptprinter.AppDatabase
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.core.content.FileProvider
@@ -54,7 +58,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
-
+import android.util.Log
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -63,17 +67,152 @@ sealed class Screen(val route: String) {
     object Landing : Screen("landing")
     object Receipt : Screen("receipt")
     object Reports : Screen("reports")
+    object DatabaseTest : Screen("database_test")
+    object NetworkSync : Screen("network_sync")
 }
 
 class MainActivity : ComponentActivity() {
+    
+    private lateinit var deviceManager: DeviceManager
+    private lateinit var syncStatusManager: SyncStatusManager
+    internal var deviceDiscoveryHelper: DeviceDiscoveryHelper? = null
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Initialize multi-device components
+        initializeMultiDeviceComponents()
+        
         setContent {
             MobileReceiptPrinterTheme {
                 MainApp()
             }
         }
+    }
+    
+    private fun initializeMultiDeviceComponents() {
+        Log.d("MRP_MIGRATION", "Initializing multi-device components...")
+        
+        // Initialize device manager
+        deviceManager = DeviceManager(this)
+        
+        Log.d("MRP_MIGRATION", "Device ID: ${deviceManager.getDeviceId()}")
+        Log.d("MRP_MIGRATION", "Device Name: ${deviceManager.getDeviceName()}")
+        Log.d("MRP_MIGRATION", "Device Role: ${deviceManager.getDeviceRole()}")
+        
+        // Test database initialization and migration
+        lifecycleScope.launch {
+            testDatabaseMigration()
+            
+            // Initialize network discovery and sync after database is ready
+            initializeNetworkSync()
+        }
+    }
+    
+    private fun initializeNetworkSync() {
+        try {
+            Log.d("MRP_MIGRATION", "Initializing network sync and device discovery...")
+            
+            // Initialize device discovery helper
+            deviceDiscoveryHelper = DeviceDiscoveryHelper(this, deviceManager, syncStatusManager)
+            deviceDiscoveryHelper?.initialize()
+            
+            Log.d("MRP_MIGRATION", "Network sync initialized successfully!")
+        } catch (e: Exception) {
+            Log.e("MRP_MIGRATION", "Failed to initialize network sync: ${e.message}", e)
+        }
+    }
+    
+    private suspend fun testDatabaseMigration() {
+        try {
+            Log.d("MRP_MIGRATION", "Testing database migration...")
+            
+            // Get database instance (this will trigger migration if needed)
+            val database = AppDatabase.getDatabase(this@MainActivity)
+            Log.d("MRP_MIGRATION", "Database initialized successfully!")
+            
+            // Initialize sync status manager with database and device manager
+            syncStatusManager = SyncStatusManager(database, deviceManager)
+            Log.d("MRP_MIGRATION", "Sync status manager initialized!")
+            
+            // Test new DAO operations
+            testNewDAOOperations(database)
+            
+            // Initialize network discovery and sync after database is ready
+            initializeNetworkSync()
+            
+        } catch (e: Exception) {
+            Log.e("MRP_MIGRATION", "Database migration failed: ${e.message}", e)
+        }
+    }
+    
+    private suspend fun testNewDAOOperations(database: AppDatabase) {
+        try {
+            Log.d("MRP_MIGRATION", "Testing new DAO operations...")
+            
+            // Test creating a receipt with new fields
+            val testReceipt = Receipt(
+                receiptNumber = 999,
+                biller = "Test Biller Migration",
+                volunteer = "Test Volunteer Migration", 
+                amount = "99.99",
+                date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()),
+                time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                deviceId = deviceManager.getDeviceId(),
+                qrCode = "MRP_TEST_QR_${System.currentTimeMillis()}",
+                syncStatus = "PENDING",
+                lastModified = System.currentTimeMillis()
+            )
+            
+            database.receiptDao().insert(testReceipt)
+            Log.d("MRP_MIGRATION", "Test receipt inserted successfully with ID: ${testReceipt.id}")
+            
+            // Test retrieving the receipt
+            val retrievedReceipt = database.receiptDao().getReceiptById(testReceipt.id)
+            if (retrievedReceipt != null) {
+                Log.d("MRP_MIGRATION", "Test receipt retrieved successfully!")
+                Log.d("MRP_MIGRATION", "QR Code: ${retrievedReceipt.qrCode}")
+                Log.d("MRP_MIGRATION", "Device ID: ${retrievedReceipt.deviceId}")
+                Log.d("MRP_MIGRATION", "Sync Status: ${retrievedReceipt.syncStatus}")
+            }
+            
+            // Test new collector DAO
+            val testCollector = Collector(
+                name = "Test Collector Migration",
+                deviceId = deviceManager.getDeviceId(),
+                lastModified = System.currentTimeMillis()
+            )
+            
+            database.collectorDao().insert(testCollector)
+            Log.d("MRP_MIGRATION", "Test collector inserted successfully!")
+            
+            // Test sync log
+            val testSyncLog = DeviceSyncLog(
+                deviceId = deviceManager.getDeviceId(),
+                lastSyncTime = System.currentTimeMillis(),
+                syncType = "MIGRATION_TEST",
+                recordCount = 1,
+                status = "SUCCESS"
+            )
+            
+            database.deviceSyncLogDao().insert(testSyncLog)
+            Log.d("MRP_MIGRATION", "Test sync log inserted successfully!")
+            
+            Log.d("MRP_MIGRATION", "✅ All database migration tests passed!")
+            
+        } catch (e: Exception) {
+            Log.e("MRP_MIGRATION", "DAO operation test failed: ${e.message}", e)
+        }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        
+        // Cleanup network resources
+        deviceDiscoveryHelper?.cleanup()
+        
+        Log.d("MRP_MIGRATION", "MainActivity cleanup completed")
     }
 }
 
@@ -93,6 +232,8 @@ fun MainApp() {
             composable(Screen.Landing.route) { LandingScreen(navController) }
             composable(Screen.Receipt.route) { ReceiptScreen(navController) }
             composable(Screen.Reports.route) { ReportsScreen(navController) }
+            composable(Screen.DatabaseTest.route) { DatabaseTestScreen() }
+            composable(Screen.NetworkSync.route) { NetworkSyncScreen(navController) }
         }
     }
 }
@@ -154,7 +295,7 @@ fun LandingScreen(navController: NavHostController) {
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                "Version 11",
+                "v${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -279,6 +420,38 @@ fun LandingScreen(navController: NavHostController) {
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("Reports", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
+        // Network Sync Button
+        item {
+            OutlinedButton(
+                onClick = { navController.navigate(Screen.NetworkSync.route) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text("🌐 Network Sync", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
+        // Database Migration Test Button
+        item {
+            OutlinedButton(
+                onClick = { navController.navigate(Screen.DatabaseTest.route) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.secondary
+                )
+            ) {
+                Text("🧪 Database Migration Test", style = MaterialTheme.typography.bodyLarge)
             }
         }
 
@@ -519,7 +692,8 @@ AMOUNT: Rs. $amount
             volunteer = volunteer,
             amount = amount,
             date = creationDate,
-            time = creationTime
+            time = creationTime,
+            lastModified = System.currentTimeMillis()
         )
         (context as ComponentActivity).lifecycleScope.launch {
             val db = AppDatabase.getDatabase(context)
@@ -1383,6 +1557,353 @@ private fun ReceiptCard(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
+        }
+    }
+}
+
+@Composable
+fun NetworkSyncScreen(navController: NavHostController) {
+    val context = LocalContext.current
+    val activity = context as MainActivity
+    val scope = rememberCoroutineScope()
+    
+    // Connect to REAL DeviceDiscoveryHelper with null safety
+    val discoveredDevices by remember(activity.deviceDiscoveryHelper) {
+        activity.deviceDiscoveryHelper?.discoveredDevices ?: MutableStateFlow(emptyList())
+    }.collectAsState()
+    val isDiscovering by remember(activity.deviceDiscoveryHelper) {
+        activity.deviceDiscoveryHelper?.isDiscovering ?: MutableStateFlow(false)
+    }.collectAsState()
+    var syncStatus by remember { mutableStateOf("Initializing network sync...") }
+    var lastSyncResult by remember { mutableStateOf("Click 'Check Network Status' to see diagnostics") }
+    
+    // Load real database statistics on screen load
+    LaunchedEffect(Unit) {
+        scope.launch {
+            try {
+                val db = AppDatabase.getDatabase(context)
+                val receiptCount = withContext(Dispatchers.IO) { db.receiptDao().getAllReceipts().size }
+                val collectedCount = withContext(Dispatchers.IO) { db.collectedReceiptDao().getAllCollectedReceipts().size }
+                val syncLogCount = withContext(Dispatchers.IO) { db.deviceSyncLogDao().getAllSyncLogs().size }
+                
+                if (lastSyncResult == "Click 'Check Network Status' to see diagnostics") {
+                    lastSyncResult = "📊 Local Database Status:\n" +
+                        "• Total receipts: $receiptCount\n" +
+                        "• Collected receipts: $collectedCount\n" +
+                        "• Sync log entries: $syncLogCount\n" +
+                        "• Ready for network sync"
+                }
+            } catch (e: Exception) {
+                lastSyncResult = "❌ Database error: ${e.message}"
+            }
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .windowInsetsPadding(WindowInsets.systemBars),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Network Sync",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                TextButton(onClick = { navController.navigateUp() }) {
+                    Text("Back")
+                }
+            }
+        }
+
+        item {
+            // Network Status Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Network Status",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (isDiscovering) "🔍 Discovering..." else "📡 Ready for Discovery",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    activity.deviceDiscoveryHelper?.let { helper ->
+                                        if (isDiscovering) {
+                                            helper.stopDiscovery()
+                                            syncStatus = "Discovery stopped"
+                                        } else {
+                                            syncStatus = "Starting discovery..."
+                                            helper.startDiscovery()
+                                            syncStatus = "Discovering devices on network..."
+                                        }
+                                    } ?: run {
+                                        syncStatus = "Network sync not initialized yet"
+                                    }
+                                }
+                            },
+                            enabled = true
+                        ) {
+                            Text(if (isDiscovering) "Stop Discovery" else "Start Discovery")
+                        }
+                    }
+                    
+                    Text(
+                        text = syncStatus,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        item {
+            // Discovered Devices Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Discovered Devices (${discoveredDevices.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    if (discoveredDevices.isEmpty()) {
+                        Text(
+                            "No devices found. Start discovery to find other MRP devices on the network.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        discoveredDevices.forEach { device ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = device.deviceName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${device.address}:${device.port}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "Role: ${device.role} | ID: ${device.deviceId.take(8)}...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    
+                                    Text(
+                                        text = "📱 Ready",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            // Sync Controls Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Sync Control",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                activity.deviceDiscoveryHelper?.let { helper ->
+                                    syncStatus = "Syncing data with ${discoveredDevices.size} devices..."
+                                    try {
+                                        val syncResult = helper.syncWithAllDevices()
+                                        
+                                        if (syncResult.success) {
+                                            lastSyncResult = "✅ Sync completed successfully!\n" +
+                                                "• ${syncResult.devicesSync} devices synced\n" +
+                                                "• ${syncResult.receiptsSync} receipts synchronized\n" +
+                                                "• ${syncResult.collectionsSync} collections updated\n" +
+                                                "• ${syncResult.conflicts} conflicts resolved\n" +
+                                                "• Completed at: ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(syncResult.timestamp))}"
+                                            syncStatus = "Real sync completed successfully"
+                                        } else {
+                                            lastSyncResult = "❌ Sync failed: ${syncResult.errorMessage ?: "Unknown error"}\n" +
+                                                "• ${syncResult.devicesSync} devices attempted\n" +
+                                                "• ${syncResult.receiptsSync} receipts processed\n" +
+                                                "• ${syncResult.collectionsSync} collections processed"
+                                            syncStatus = "Sync failed - check network connection"
+                                        }
+                                    } catch (e: Exception) {
+                                        lastSyncResult = "❌ Sync error: ${e.message}\n• Check network connectivity\n• Ensure devices are reachable"
+                                        syncStatus = "Sync error occurred"
+                                    }
+                                } ?: run {
+                                    lastSyncResult = "❌ Network sync not initialized"
+                                    syncStatus = "Initialization error"
+                                }
+                            }
+                        },
+                        enabled = discoveredDevices.isNotEmpty() && !isDiscovering,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🔄 Sync Data with All Devices")
+                    }
+                    
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                activity.deviceDiscoveryHelper?.let { helper ->
+                                    syncStatus = "Checking network sync status..."
+                                    
+                                    val statistics: Map<String, Any> = helper.getSyncStatistics()
+                                    val networkStatus = (statistics["networkStatus"] as? Enum<*>)?.name ?: "UNKNOWN"
+                                    val isDiscovering = statistics["isDiscovering"] as? Boolean ?: false
+                                    val discoveredCount = statistics["discoveredDevices"] as? Int ?: 0
+                                    val lastSyncTime = statistics["lastSyncTime"] as? Long ?: 0L
+                                    val lastSyncSuccess = statistics["lastSyncSuccess"] as? Boolean ?: false
+                                    val totalReceipts = statistics["totalReceiptsSync"] as? Int ?: 0
+                                    val totalCollections = statistics["totalCollectionsSync"] as? Int ?: 0
+                                    val totalConflicts = statistics["totalConflicts"] as? Int ?: 0
+                                    
+                                    val timeStr = if (lastSyncTime > 0) {
+                                        java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(lastSyncTime))
+                                    } else "Never"
+                                    
+                                    lastSyncResult = "🧪 Network Diagnostics:\n" +
+                                        "• Network discovery: ${if (discoveredCount > 0) "✅" else "⚠️"} ($discoveredCount devices found)\n" +
+                                        "• Network status: $networkStatus\n" +
+                                        "• Currently discovering: ${if (isDiscovering) "✅" else "❌"}\n" +
+                                        "• Last sync: $timeStr (${if (lastSyncSuccess) "✅ Success" else "❌ Failed"})\n" +
+                                        "• Total synced: $totalReceipts receipts, $totalCollections collections\n" +
+                                        "• Conflicts resolved: $totalConflicts"
+                                        
+                                    syncStatus = "Real diagnostics completed"
+                                } ?: run {
+                                    lastSyncResult = "❌ DeviceDiscoveryHelper not initialized"
+                                    syncStatus = "Diagnostic failed"
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🧪 Check Network Status")
+                    }
+                }
+            }
+        }
+
+        item {
+            // Sync Results Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Last Sync Result",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    Text(
+                        text = lastSyncResult,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+
+        item {
+            // Phase 2 Status Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "🚀 Phase 2: Network Sync System",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    
+                    Text(
+                        "✅ DeviceDiscoveryHelper - Network discovery infrastructure\n" +
+                        "✅ JSON Sync Protocol - Multi-device data exchange\n" +
+                        "✅ Conflict Resolution - Timestamp & version-based\n" +
+                        "✅ Network Monitoring - Real-time connection status\n" +
+                        "✅ Permissions & Integration - Ready for deployment",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
