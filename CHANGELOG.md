@@ -5,7 +5,45 @@ All notable changes to the Mobile Receipt Printer project will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.1] - 2025-09-29
+
+### Added - Phase 2: Enhanced Local Network Sync System ✅ COMPLETED
+- **Real mDNS/NSD Network Discovery**: Actual device discovery on local WiFi networks (no more fake data)
+- **Complete JSON Sync Protocol**: Full data serialization for receipts, collections, and device info
+- **TCP Socket Communication**: Production-ready network communication with proper error handling
+- **Multi-Device Conflict Resolution**: Version-based and timestamp-based conflict resolution
+- **Database Sync Management**: Atomic operations with PENDING → SYNCED → CONFLICT status tracking
+- **Device Role Management**: BILLER, COLLECTOR, BOTH roles with proper enum support
+- **Network Status Monitoring**: Real-time connection status and sync progress tracking
+- **DeviceDiscoveryHelper**: 780+ lines of production-ready network sync infrastructure
+
+### Fixed
+- **CRITICAL SYNC DATA LOSS**: Fixed unidirectional sync causing permanent data loss of deleted receipts
+- **Bidirectional Data Recovery**: Implemented full bidirectional sync that recovers accidentally deleted receipts from network
+- **Audit Trail Integrity**: Prevents permanent loss of financial transaction records due to accidental deletions
+- **Real Sync Implementation**: Replaced fake dummy sync results with actual DeviceDiscoveryHelper operations
+- **KAPT → KSP Migration**: Fixed Kotlin 2.0+ compatibility by switching to modern KSP annotation processing
+- **Room Database Issues**: Resolved all annotation processing error and method conflicts
+- **UI Network Integration**: Connected real DeviceDiscoveryHelper to NetworkSyncScreen (removed dummy data)
+- **Access Visibility**: Fixed deviceDiscoveryHelper access in Composable functions
+- **Compilation Errors**: Resolved DeviceRole enum, SyncStatusManager constructor, and method call issues
+
+### Technical Achievements
+- **Database Schema v4**: Multi-device entities with UUID-based sync
+- **Real Network Protocol**: TCP/IP with JSON payload and conflict resolution
+- **StateFlow Integration**: Reactive UI updates from network discovery state
+- **Production Ready**: Comprehensive error handling and network resilience
+
+## [Unreleased] - Next Phases
+
+### Planned
+- **Phase 3**: Cross-Device QR Generation with ZXing library
+- **Phase 4**: Camera & Cross-Device Scanner with ML Kit
+- **Phase 5**: Network-Aware Collector Interface
+- **Phase 6**: Multi-Device Collection Tracking
+- **Phase 7**: Network-Wide Reconciliation Reports
+
+## [Previous Releases]
 
 ### Fixed
 - Receipt creation now records the exact timestamp at the moment the user presses the in-form "Create Receipt" action (previously it reused the time from when the screen first opened).
