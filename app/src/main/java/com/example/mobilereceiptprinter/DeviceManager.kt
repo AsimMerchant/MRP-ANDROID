@@ -33,11 +33,15 @@ class DeviceManager(private val context: Context) {
      */
     fun getDeviceId(): String {
         var deviceId = prefs.getString(KEY_DEVICE_ID, null)
-        if (deviceId == null) {
+        
+        // Force regenerate device ID if it contains underscore (old format)
+        if (deviceId == null || deviceId.contains("_")) {
             // Generate unique device ID combining Android ID and UUID
+            // Note: Use hyphen separator to avoid conflicts with QR underscore separators
             val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-            deviceId = "MRP_${androidId}_${UUID.randomUUID().toString().substring(0, 8)}"
+            deviceId = "${androidId}-${UUID.randomUUID().toString().substring(0, 8)}"
             prefs.edit().putString(KEY_DEVICE_ID, deviceId).apply()
+
         }
         return deviceId
     }

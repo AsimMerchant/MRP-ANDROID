@@ -13,6 +13,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -67,13 +70,14 @@ sealed class Screen(val route: String) {
     object Landing : Screen("landing")
     object Receipt : Screen("receipt")
     object Reports : Screen("reports")
-    object DatabaseTest : Screen("database_test")
     object NetworkSync : Screen("network_sync")
+    object Scanner : Screen("scanner") // Phase 4: QR Code Scanner
+    object CollectionReport : Screen("collection_report") // Phase 4: Collection Summary
 }
 
 class MainActivity : ComponentActivity() {
     
-    private lateinit var deviceManager: DeviceManager
+    internal lateinit var deviceManager: DeviceManager
     private lateinit var syncStatusManager: SyncStatusManager
     internal var deviceDiscoveryHelper: DeviceDiscoveryHelper? = null
     
@@ -92,18 +96,18 @@ class MainActivity : ComponentActivity() {
     }
     
     private fun initializeMultiDeviceComponents() {
-        Log.d("MRP_MIGRATION", "Initializing multi-device components...")
+        Log.d("MRP_INIT", "Initializing multi-device components...")
         
         // Initialize device manager
         deviceManager = DeviceManager(this)
         
-        Log.d("MRP_MIGRATION", "Device ID: ${deviceManager.getDeviceId()}")
-        Log.d("MRP_MIGRATION", "Device Name: ${deviceManager.getDeviceName()}")
-        Log.d("MRP_MIGRATION", "Device Role: ${deviceManager.getDeviceRole()}")
+        Log.d("MRP_INIT", "Device ID: ${deviceManager.getDeviceId()}")
+        Log.d("MRP_INIT", "Device Name: ${deviceManager.getDeviceName()}")
+        Log.d("MRP_INIT", "Device Role: ${deviceManager.getDeviceRole()}")
         
-        // Test database initialization and migration
+        // Initialize database and network sync
         lifecycleScope.launch {
-            testDatabaseMigration()
+            initializeDatabase()
             
             // Initialize network discovery and sync after database is ready
             initializeNetworkSync()
@@ -112,97 +116,32 @@ class MainActivity : ComponentActivity() {
     
     private fun initializeNetworkSync() {
         try {
-            Log.d("MRP_MIGRATION", "Initializing network sync and device discovery...")
+            Log.d("MRP_INIT", "Initializing network sync and device discovery...")
             
             // Initialize device discovery helper
             deviceDiscoveryHelper = DeviceDiscoveryHelper(this, deviceManager, syncStatusManager)
             deviceDiscoveryHelper?.initialize()
             
-            Log.d("MRP_MIGRATION", "Network sync initialized successfully!")
+            Log.d("MRP_INIT", "Network sync initialized successfully!")
         } catch (e: Exception) {
-            Log.e("MRP_MIGRATION", "Failed to initialize network sync: ${e.message}", e)
+            Log.e("MRP_INIT", "Failed to initialize network sync: ${e.message}", e)
         }
     }
     
-    private suspend fun testDatabaseMigration() {
+    private suspend fun initializeDatabase() {
         try {
-            Log.d("MRP_MIGRATION", "Testing database migration...")
+            Log.d("MRP_INIT", "Initializing database...")
             
             // Get database instance (this will trigger migration if needed)
             val database = AppDatabase.getDatabase(this@MainActivity)
-            Log.d("MRP_MIGRATION", "Database initialized successfully!")
+            Log.d("MRP_INIT", "Database initialized successfully!")
             
             // Initialize sync status manager with database and device manager
             syncStatusManager = SyncStatusManager(database, deviceManager)
-            Log.d("MRP_MIGRATION", "Sync status manager initialized!")
-            
-            // Test new DAO operations
-            testNewDAOOperations(database)
-            
-            // Initialize network discovery and sync after database is ready
-            initializeNetworkSync()
+            Log.d("MRP_INIT", "Sync status manager initialized!")
             
         } catch (e: Exception) {
-            Log.e("MRP_MIGRATION", "Database migration failed: ${e.message}", e)
-        }
-    }
-    
-    private suspend fun testNewDAOOperations(database: AppDatabase) {
-        try {
-            Log.d("MRP_MIGRATION", "Testing new DAO operations...")
-            
-            // Test creating a receipt with new fields
-            val testReceipt = Receipt(
-                receiptNumber = 999,
-                biller = "Test Biller Migration",
-                volunteer = "Test Volunteer Migration", 
-                amount = "99.99",
-                date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()),
-                time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
-                deviceId = deviceManager.getDeviceId(),
-                qrCode = "MRP_TEST_QR_${System.currentTimeMillis()}",
-                syncStatus = "PENDING",
-                lastModified = System.currentTimeMillis()
-            )
-            
-            database.receiptDao().insert(testReceipt)
-            Log.d("MRP_MIGRATION", "Test receipt inserted successfully with ID: ${testReceipt.id}")
-            
-            // Test retrieving the receipt
-            val retrievedReceipt = database.receiptDao().getReceiptById(testReceipt.id)
-            if (retrievedReceipt != null) {
-                Log.d("MRP_MIGRATION", "Test receipt retrieved successfully!")
-                Log.d("MRP_MIGRATION", "QR Code: ${retrievedReceipt.qrCode}")
-                Log.d("MRP_MIGRATION", "Device ID: ${retrievedReceipt.deviceId}")
-                Log.d("MRP_MIGRATION", "Sync Status: ${retrievedReceipt.syncStatus}")
-            }
-            
-            // Test new collector DAO
-            val testCollector = Collector(
-                name = "Test Collector Migration",
-                deviceId = deviceManager.getDeviceId(),
-                lastModified = System.currentTimeMillis()
-            )
-            
-            database.collectorDao().insert(testCollector)
-            Log.d("MRP_MIGRATION", "Test collector inserted successfully!")
-            
-            // Test sync log
-            val testSyncLog = DeviceSyncLog(
-                deviceId = deviceManager.getDeviceId(),
-                lastSyncTime = System.currentTimeMillis(),
-                syncType = "MIGRATION_TEST",
-                recordCount = 1,
-                status = "SUCCESS"
-            )
-            
-            database.deviceSyncLogDao().insert(testSyncLog)
-            Log.d("MRP_MIGRATION", "Test sync log inserted successfully!")
-            
-            Log.d("MRP_MIGRATION", "✅ All database migration tests passed!")
-            
-        } catch (e: Exception) {
-            Log.e("MRP_MIGRATION", "DAO operation test failed: ${e.message}", e)
+            Log.e("MRP_INIT", "Database initialization failed: ${e.message}", e)
         }
     }
     
@@ -212,7 +151,7 @@ class MainActivity : ComponentActivity() {
         // Cleanup network resources
         deviceDiscoveryHelper?.cleanup()
         
-        Log.d("MRP_MIGRATION", "MainActivity cleanup completed")
+        Log.d("MRP_INIT", "MainActivity cleanup completed")
     }
 }
 
@@ -232,8 +171,17 @@ fun MainApp() {
             composable(Screen.Landing.route) { LandingScreen(navController) }
             composable(Screen.Receipt.route) { ReceiptScreen(navController) }
             composable(Screen.Reports.route) { ReportsScreen(navController) }
-            composable(Screen.DatabaseTest.route) { DatabaseTestScreen() }
             composable(Screen.NetworkSync.route) { NetworkSyncScreen(navController) }
+            composable(Screen.Scanner.route) { 
+                CameraScannerScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.CollectionReport.route) { 
+                CollectionReportScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
@@ -439,19 +387,35 @@ fun LandingScreen(navController: NavHostController) {
             }
         }
 
-        // Database Migration Test Button
+        // QR Code Scanner Button (Phase 4)
         item {
             OutlinedButton(
-                onClick = { navController.navigate(Screen.DatabaseTest.route) },
+                onClick = { navController.navigate(Screen.Scanner.route) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.secondary
+                    contentColor = MaterialTheme.colorScheme.tertiary
                 )
             ) {
-                Text("🧪 Database Migration Test", style = MaterialTheme.typography.bodyLarge)
+                Text("📱 QR Scanner", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
+        // Collection Report Button (Phase 4)
+        item {
+            OutlinedButton(
+                onClick = { navController.navigate(Screen.CollectionReport.route) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.tertiary
+                )
+            ) {
+                Text("📊 Collection Report", style = MaterialTheme.typography.bodyLarge)
             }
         }
 
@@ -516,6 +480,7 @@ fun ReceiptScreen(navController: NavHostController) {
     var amount by remember { mutableStateOf("") }
     var showPreview by remember { mutableStateOf(false) }
     var receiptNumber by remember { mutableStateOf(1) }
+    var currentQRCode by remember { mutableStateOf("") }
     // Remove remembered static date/time; we will capture fresh timestamps at creation time
     fun nowDate(): String = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
     fun nowTime(): String = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
@@ -565,8 +530,12 @@ fun ReceiptScreen(navController: NavHostController) {
     }
 
     // Build receipt text dynamically when printing (uses latest values)
-    fun buildReceiptText(date: String, time: String) = """
-=======================
+    fun buildReceiptText(date: String, time: String, qrCode: String = "") = """
+${if (qrCode.isNotEmpty()) {
+    QRCodeGenerator.generateThermalPrinterQR(qrCode) + "\n"
+} else {
+    ""
+}}=======================
 \\u001B\\u0021\\u0030 RECEIPT #$receiptNumber \\u001B\\u0021\\u0000
 =======================
 Date: $date
@@ -581,12 +550,11 @@ Volunteer: $volunteer
 
 
 
-
 """.trimIndent()
 
     // Clean version for preview display (without ESC/POS commands)
-    fun buildReceiptPreviewText() = """
-
+    fun buildReceiptPreviewText(qrCode: String = "") = """
+${if (qrCode.isNotEmpty()) "[QR CODE]\n" else ""}
 RECEIPT #$receiptNumber     
 Biller: $biller
 Volunteer: $volunteer
@@ -607,7 +575,7 @@ AMOUNT: Rs. $amount
         // Use fresh timestamp at the moment of print (may differ from creation time if delayed)
         val printDate = nowDate()
         val printTime = nowTime()
-        val receiptText = buildReceiptText(printDate, printTime)
+        val receiptText = buildReceiptText(printDate, printTime, currentQRCode)
         val connected = printerHelper.connectToDevice(device)
         if (connected) {
             val printed = printerHelper.printText(receiptText)
@@ -633,7 +601,7 @@ AMOUNT: Rs. $amount
             try {
                 val printDate = nowDate()
                 val printTime = nowTime()
-                val receiptText = buildReceiptText(printDate, printTime)
+                val receiptText = buildReceiptText(printDate, printTime, currentQRCode)
                 
                 val connected = printerHelper.connectToDevice(device)
                 if (connected) {
@@ -686,13 +654,27 @@ AMOUNT: Rs. $amount
 
         // Auto-save the receipt with fresh timestamps
         val amountValue = amount.toDoubleOrNull() ?: 0.0
+        
+        // Generate unique QR code for receipt (Phase 3)
+        val receiptId = java.util.UUID.randomUUID().toString()
+        val receiptData = "$biller$volunteer$amount$creationDate$creationTime"
+        val qrCode = QRCodeGenerator.generateQRContent(
+            receiptId = receiptId,
+            deviceId = (context as MainActivity).deviceManager.getDeviceId(),
+            receiptData = receiptData
+        )
+        currentQRCode = qrCode  // Store for printing/preview
+        
         val receipt = Receipt(
+            id = receiptId,  // Use generated UUID as primary key
             receiptNumber = receiptNumber,
             biller = biller,
             volunteer = volunteer,
             amount = amount,
             date = creationDate,
             time = creationTime,
+            qrCode = qrCode,  // Populate QR code field
+            deviceId = (context as MainActivity).deviceManager.getDeviceId(),  // Track device that created receipt
             lastModified = System.currentTimeMillis()
         )
         (context as ComponentActivity).lifecycleScope.launch {
@@ -709,27 +691,33 @@ AMOUNT: Rs. $amount
 
     // New function: Create receipt and auto-print
     fun createReceiptAndPrint() {
+        // Show dialog immediately for instant user feedback
+        isCreatingAndPrinting = true
+        showPrintingDialog = true
+        printingProgress = "Initializing..."
+        
         if (!bluetoothPermissionGranted) {
-            printStatus = "Bluetooth permission not granted."
+            printingProgress = "❌ Bluetooth permission not granted"
+            isCreatingAndPrinting = false
             return
         }
 
         if (savedPrinterAddress == null) {
-            printStatus = "No printer selected. Please select a printer first."
+            printingProgress = "❌ No printer selected. Please select a printer first."
+            isCreatingAndPrinting = false
             return
         }
 
-        isCreatingAndPrinting = true
-        showPrintingDialog = true
-        printingProgress = "Creating receipt..."
-        
-        // Create and save receipt
-        createAndSaveReceipt()
-        
-        // Start printing process
-        printingProgress = "Connecting to printer..."
-        
+        // Move all heavy operations to coroutine to avoid blocking dialog display
         (context as ComponentActivity).lifecycleScope.launch {
+            printingProgress = "Creating receipt..."
+            
+            // Create and save receipt (now async)
+            createAndSaveReceipt()
+            
+            // Start printing process
+            printingProgress = "Connecting to printer..."
+            
             val savedDevice = printerHelper.getPairedDevices()?.find { it.address == savedPrinterAddress }
             if (savedDevice != null) {
                 printingProgress = "Printing receipt..."
@@ -874,10 +862,14 @@ AMOUNT: Rs. $amount
 
                     Button(
                         onClick = {
+                            // Show dialog immediately - no blocking operations
                             createReceiptAndPrint()
                             focusManager.clearFocus()
-
+                            
+                            // Run database refresh asynchronously without blocking dialog
                             scope.launch {
+                                // Small delay to ensure dialog renders first
+                                delay(50)
                                 val db = AppDatabase.getDatabase(context)
                                 val billers = withContext(Dispatchers.IO) { db.suggestionDao().getAllBillerSuggestions() }
                                 val volunteers = withContext(Dispatchers.IO) { db.suggestionDao().getAllVolunteerSuggestions() }
@@ -906,7 +898,8 @@ AMOUNT: Rs. $amount
         if (showPreview && !showPrintingDialog) {
             item(key = "receipt_preview") {
                 ReceiptPreviewCard(
-                    receiptPreviewText = buildReceiptPreviewText()
+                    receiptPreviewText = buildReceiptPreviewText(currentQRCode),
+                    qrCode = currentQRCode
                 )
             }
         }
@@ -936,7 +929,7 @@ AMOUNT: Rs. $amount
                             )
                         ) {
                             Text(
-                                text = buildReceiptPreviewText(),
+                                text = buildReceiptPreviewText(currentQRCode),
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                                 ),
@@ -1015,7 +1008,7 @@ private fun SuggestionCard(
 }
 
 @Composable
-private fun ReceiptPreviewCard(receiptPreviewText: String) {
+private fun ReceiptPreviewCard(receiptPreviewText: String, qrCode: String = "") {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
@@ -1037,13 +1030,52 @@ private fun ReceiptPreviewCard(receiptPreviewText: String) {
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                 )
             ) {
-                Text(
-                    text = receiptPreviewText,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                    ),
-                    modifier = Modifier.padding(16.dp)
-                )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = receiptPreviewText,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    )
+                    
+                    // Display QR Code if available (Phase 3)
+                    if (qrCode.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Generate and display QR code bitmap
+                        val qrBitmap = remember(qrCode) {
+                            QRCodeGenerator.generateQRBitmap(qrCode, 120)
+                        }
+                        
+                        if (qrBitmap != null) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "QR Code",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Image(
+                                    bitmap = qrBitmap.asImageBitmap(),
+                                    contentDescription = "Receipt QR Code",
+                                    modifier = Modifier.size(120.dp)
+                                )
+                                Text(
+                                    qrCode,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1400,7 +1432,7 @@ fun ReportsScreen(navController: NavHostController) {
                             val db = AppDatabase.getDatabase(context)
                             withContext(Dispatchers.IO) {
                                 // Delete all receipts for this biller
-                                db.receiptDao().deleteAllReceiptsFromBiller(billerToDelete!!)
+                                db.receiptDao().deleteAllReceiptsFromBillerWithCleanup(billerToDelete!!)
                             }
 
                             // Reset the biller's receipt count in SharedPreferences so next receipt starts from #1
