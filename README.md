@@ -100,7 +100,7 @@ app/src/main/java/com/example/mobilereceiptprinter/
 
 ### Prerequisites
 - Android Studio Arctic Fox or later
-- Android SDK 24+ (Android 7.0)
+- Android SDK 31+ (Android 12.0)
 - Bluetooth thermal printer (ESC/POS compatible)
 - Android device with Bluetooth support
 
@@ -199,7 +199,7 @@ Receipts are formatted for thermal printers with:
 - Try clearing and re-entering suggestions
 
 **App Crashes on Launch**
-- Check Android version compatibility (API 24+)
+- Check Android version compatibility (API 31+)
 - Verify all permissions are granted
 - Clear app data and restart
 
@@ -221,7 +221,7 @@ Receipts are formatted for thermal printers with:
 - Maintain consistent formatting with existing code
 
 ### Testing
-- Test on multiple Android versions (API 24-34)
+- Test on multiple Android versions (API 31-36)
 - Verify Bluetooth functionality with different printer models
 - Test permission flows on Android 12+
 - Validate database operations
@@ -247,9 +247,9 @@ For support, bug reports, or feature requests:
 
 ## 🚀 Development Status
 
-**Current Version**: 1.1.0  
-**Feature Branch**: `feature/share_reports`  
-**Development Phase**: Phase 2 Complete ✅
+**Current Version**: 1.4.1  
+**Feature Branch**: `feature/phase3`  
+**Development Phase**: Phase 4 Complete + Performance Optimized ⚡
 
 ### ✅ Completed Features (Phase 1 & 2)
 - **Multi-Device Database Schema**: UUID-based global sync system
@@ -273,7 +273,7 @@ For support, bug reports, or feature requests:
 
 ---
 
-**Version**: 11  
-**Last Updated**: September 2025  
-**Minimum Android Version**: 7.0 (API 24)  
-**Target Android Version**: 14 (API 34)
+**Version**: 15  
+**Last Updated**: October 2025  
+**Minimum Android Version**: 12.0 (API 31)  
+**Target Android Version**: 14 (API 36)
