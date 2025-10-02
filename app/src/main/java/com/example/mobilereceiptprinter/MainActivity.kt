@@ -613,13 +613,16 @@ AMOUNT: Rs. $amount
                         printingProgress = "✓ Receipt printed successfully!"
                         kotlinx.coroutines.delay(1500)
                         
-                        // Clear form for next receipt
-                        volunteer = ""
-                        amount = ""
+                        // Clear form for next receipt - do this AFTER dialog closes to avoid keyboard interference
                         showPreview = false
                         printStatus = ""
                         showPrintingDialog = false
                         isCreatingAndPrinting = false
+                        
+                        // Clear text fields after a small delay to ensure keyboard is fully dismissed
+                        kotlinx.coroutines.delay(100)
+                        volunteer = ""
+                        amount = ""
                     } else {
                         printingProgress = "❌ Print failed"
                         kotlinx.coroutines.delay(2000)
@@ -710,10 +713,51 @@ AMOUNT: Rs. $amount
 
         // Move all heavy operations to coroutine to avoid blocking dialog display
         (context as ComponentActivity).lifecycleScope.launch {
+            // Allow UI to recompose and show dialog first
+            delay(1)
+            
             printingProgress = "Creating receipt..."
             
-            // Create and save receipt (now async)
-            createAndSaveReceipt()
+            // Inline all createAndSaveReceipt() operations to prevent UI blocking
+            if (biller.isNotBlank()) {
+                receiptNumber = getNextReceiptNumber(biller)
+            }
+            showPreview = true
+            
+
+            val creationDate = nowDate()
+            val creationTime = nowTime()
+            val amountValue = amount.toDoubleOrNull() ?: 0.0
+            val receiptId = java.util.UUID.randomUUID().toString()
+            val receiptData = "$biller$volunteer$amount$creationDate$creationTime"
+            val qrCode = QRCodeGenerator.generateQRContent(
+                receiptId = receiptId,
+                deviceId = (context as MainActivity).deviceManager.getDeviceId(),
+                receiptData = receiptData
+            )
+            currentQRCode = qrCode
+            
+            val receipt = Receipt(
+                id = receiptId,
+                receiptNumber = receiptNumber,
+                biller = biller,
+                volunteer = volunteer,
+                amount = amount,
+                date = creationDate,
+                time = creationTime,
+                qrCode = qrCode,
+                deviceId = (context as MainActivity).deviceManager.getDeviceId(),
+                lastModified = System.currentTimeMillis()
+            )
+            
+            // Database operations (same as before)
+            val db = AppDatabase.getDatabase(context)
+            withContext(Dispatchers.IO) {
+                db.receiptDao().insert(receipt)
+                db.suggestionDao().addBillerSuggestion(biller)
+                db.suggestionDao().addVolunteerSuggestion(volunteer)
+            }
+            saveBillerData(biller, receiptNumber, amountValue)
             
             // Start printing process
             printingProgress = "Connecting to printer..."
@@ -862,9 +906,15 @@ AMOUNT: Rs. $amount
 
                     Button(
                         onClick = {
+                            // Clear all autocomplete suggestions that might maintain focus
+                            showBillerSuggestions = false
+                            showVolunteerSuggestions = false
+                            
+                            // Dismiss keyboard immediately when button is pressed
+                            focusManager.clearFocus()
+                            
                             // Show dialog immediately - no blocking operations
                             createReceiptAndPrint()
-                            focusManager.clearFocus()
                             
                             // Run database refresh asynchronously without blocking dialog
                             scope.launch {
