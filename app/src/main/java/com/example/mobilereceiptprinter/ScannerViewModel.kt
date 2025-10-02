@@ -30,7 +30,7 @@ class ScannerViewModel(
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
     
     private val recentScans = mutableSetOf<String>()
-    private val scanCooldown = 2000L // 2 seconds cooldown between same QR scans
+    private val scanCooldown = 500L // 500ms cooldown for instant scanning like Paytm
     private val scanTimestamps = mutableMapOf<String, Long>()
     
     /**

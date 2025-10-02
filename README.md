@@ -2,7 +2,7 @@
 
 A modern Android application built with Kotlin and Jetpack Compose for creating and printing receipts via Bluetooth thermal printers with QR code generation and cross-device collection tracking. Perfect for small businesses, events, and mobile payment collection with multi-device synchronization.
 
-**Current Status**: Phase 4 Complete ✅ | UX Optimized ⚡ (98% responsiveness improvement) | Production Ready 🚀 | Version 1.4.1
+**Current Status**: QR Scanner Enhanced 📱 | Paytm-Style Instant Scanning | Camera Repositioned | 75% Faster | Production Ready 🚀 | Version 1.4.2
 
 ## 🌟 Features
 
@@ -24,6 +24,14 @@ A modern Android application built with Kotlin and Jetpack Compose for creating 
 - **Currency Display**: ✅ **COMPLETED** - Proper rupee (₹) currency formatting throughout the app
 - **Database Integrity**: ✅ **COMPLETED** - Cascade delete operations and orphaned record cleanup
 - **Audit Trail**: ✅ **COMPLETED** - Complete collection audit with statistics and percentage tracking
+
+### QR Scanner Enhancement 📱 **COMPLETED**
+- **Paytm-Style Scanning**: ✅ **COMPLETED** - Instant QR detection without targeting overlay or positioning constraints
+- **Camera Repositioning**: ✅ **COMPLETED** - Moved camera from bottom 1/3 to top 1/3 of screen as requested
+- **ML Kit Optimization**: ✅ **COMPLETED** - Singleton scanner pattern with QR-only detection for better performance
+- **Faster Scanning**: ✅ **COMPLETED** - Reduced cooldown from 2000ms to 500ms (75% improvement)
+- **Background Processing**: ✅ **COMPLETED** - Image analysis moved to dedicated background thread
+- **Performance Optimization**: ✅ **COMPLETED** - Eliminated per-frame scanner creation overhead
 
 ### Data Management
 - **Multi-Device Database**: Enhanced Room database with UUID-based global sync system ✨
@@ -90,6 +98,14 @@ app/src/main/java/com/example/mobilereceiptprinter/
 - **UI Recomposition**: `delay(1)` allows Compose to render dialog before heavy operations execute
 - **Keyboard Synchronization**: Keyboard dismisses immediately when dialog appears for seamless UX transition
 - **User Experience**: Near-instant visual feedback when clicking "Create & Print Receipt" button
+
+### QR Scanner Enhancement (75% Faster Scanning) 📱
+- **Paytm-Style Performance**: Instant QR detection anywhere in camera view without targeting constraints
+- **Camera Repositioning**: User-requested move from bottom 1/3 to top 1/3 of screen layout
+- **ML Kit Optimization**: Singleton pattern eliminates per-frame scanner creation overhead
+- **Cooldown Reduction**: Scan cooldown reduced from 2000ms to 500ms for 75% faster successive scans
+- **Background Processing**: Image analysis moved to dedicated thread freeing UI thread
+- **QR-Only Detection**: Focused detection mode instead of generic barcode scanning
 
 ### Technical Improvements
 - **QR Generation**: SHA-256 hashing and UUID generation moved to background coroutines

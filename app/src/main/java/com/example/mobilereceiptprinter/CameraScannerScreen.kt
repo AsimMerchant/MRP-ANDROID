@@ -7,8 +7,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,11 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -36,8 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
@@ -46,8 +39,9 @@ import java.util.concurrent.Executors
  * Camera Scanner Screen for QR Code Collection
  * 
  * Features:
- * - 1/3 screen camera preview with QR outline overlay
+ * - Camera preview at top 1/3 of screen
  * - Real-time QR code scanning with ML Kit
+ * - Instant scanning without targeting overlay (Paytm-style)
  * - Collection status display and scan history
  * - Permission handling for camera access
  */
@@ -58,6 +52,22 @@ data class ScanResult(
     val isValid: Boolean,
     val receiptInfo: String
 )
+
+// Singleton ML Kit scanner for optimized performance
+private object MLKitScanner {
+    private var _scanner: com.google.mlkit.vision.barcode.BarcodeScanner? = null
+    
+    val scanner: com.google.mlkit.vision.barcode.BarcodeScanner
+        get() {
+            if (_scanner == null) {
+                val options = BarcodeScannerOptions.Builder()
+                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                    .build()
+                _scanner = BarcodeScanning.getClient(options)
+            }
+            return _scanner!!
+        }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,7 +82,6 @@ fun CameraScannerScreen(
     val scannerViewModel = remember {
         ScannerViewModel(database, deviceManager)
     }
-    val lifecycleOwner = LocalLifecycleOwner.current
     
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -113,7 +122,63 @@ fun CameraScannerScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // 2/3 screen - Scan results and instructions
+            // 1/3 screen - Camera preview (at top)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            ) {
+                if (hasCameraPermission) {
+                    CameraPreview(
+                        onQRCodeDetected = { qrContent ->
+                            scannerViewModel.processScan(qrContent)
+                        }
+                    )
+                } else {
+                    // Permission denied state
+                    Card(
+                        modifier = Modifier.fillMaxSize(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = "Camera Permission Required",
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                text = "Camera Permission Required",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                            Text(
+                                text = "Allow camera access to scan QR codes",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                            Button(
+                                onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                                modifier = Modifier.padding(top = 8.dp)
+                            ) {
+                                Text("Grant Permission")
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 2/3 screen - Scan results and instructions (at bottom)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -141,7 +206,7 @@ fun CameraScannerScreen(
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                                 Text(
-                                    text = "Point camera at QR code on receipt",
+                                    text = "Instant QR scanning - no targeting required",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     textAlign = TextAlign.Center,
@@ -191,7 +256,7 @@ fun CameraScannerScreen(
                                 )
                             ) {
                                 Text(
-                                    text = "No scans yet. Position QR code in camera view below.",
+                                    text = "No scans yet. Point camera at any QR code above.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center,
@@ -204,59 +269,6 @@ fun CameraScannerScreen(
                     } else {
                         items(scanResults) { result ->
                             ScanResultCard(result)
-                        }
-                    }
-                }
-            }
-            
-            // 1/3 screen - Camera preview with QR overlay
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            ) {
-                if (hasCameraPermission) {
-                    CameraPreview(
-                        onQRCodeDetected = { qrContent ->
-                            scannerViewModel.processScan(qrContent)
-                        }
-                    )
-                    
-                    // QR Code targeting overlay
-                    QRTargetOverlay()
-                } else {
-                    // Permission denied state
-                    Card(
-                        modifier = Modifier.fillMaxSize(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = "Camera Permission Required",
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            Text(
-                                text = "Camera Permission Required",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.padding(top = 8.dp)
-                            )
-                            Button(
-                                onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-                                modifier = Modifier.padding(top = 8.dp)
-                            ) {
-                                Text("Grant Permission")
-                            }
                         }
                     }
                 }
@@ -336,8 +348,9 @@ fun CameraPreview(
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                     .also {
+                        // Use background thread for better performance
                         it.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy ->
-                            processImageProxy(imageProxy, onQRCodeDetected)
+                            processImageProxyOptimized(imageProxy, onQRCodeDetected)
                         }
                     }
                 
@@ -362,109 +375,21 @@ fun CameraPreview(
     )
 }
 
-@Composable
-fun QRTargetOverlay() {
-    Canvas(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        val canvasWidth = size.width
-        val canvasHeight = size.height
-        
-        // QR target square - centered, about 60% of smaller dimension
-        val targetSize = minOf(canvasWidth, canvasHeight) * 0.6f
-        val offsetX = (canvasWidth - targetSize) / 2
-        val offsetY = (canvasHeight - targetSize) / 2
-        
-        // Draw QR target outline
-        drawRoundRect(
-            color = Color.White,
-            topLeft = Offset(offsetX, offsetY),
-            size = Size(targetSize, targetSize),
-            cornerRadius = CornerRadius(8.dp.toPx()),
-            style = Stroke(width = 3.dp.toPx())
-        )
-        
-        // Draw corner markers
-        val cornerLength = 20.dp.toPx()
-        val strokeWidth = 4.dp.toPx()
-        
-        // Top-left corner
-        drawLine(
-            color = Color.White,
-            start = Offset(offsetX, offsetY + cornerLength),
-            end = Offset(offsetX, offsetY),
-            strokeWidth = strokeWidth
-        )
-        drawLine(
-            color = Color.White,
-            start = Offset(offsetX, offsetY),
-            end = Offset(offsetX + cornerLength, offsetY),
-            strokeWidth = strokeWidth
-        )
-        
-        // Top-right corner
-        drawLine(
-            color = Color.White,
-            start = Offset(offsetX + targetSize - cornerLength, offsetY),
-            end = Offset(offsetX + targetSize, offsetY),
-            strokeWidth = strokeWidth
-        )
-        drawLine(
-            color = Color.White,
-            start = Offset(offsetX + targetSize, offsetY),
-            end = Offset(offsetX + targetSize, offsetY + cornerLength),
-            strokeWidth = strokeWidth
-        )
-        
-        // Bottom-left corner
-        drawLine(
-            color = Color.White,
-            start = Offset(offsetX, offsetY + targetSize - cornerLength),
-            end = Offset(offsetX, offsetY + targetSize),
-            strokeWidth = strokeWidth
-        )
-        drawLine(
-            color = Color.White,
-            start = Offset(offsetX, offsetY + targetSize),
-            end = Offset(offsetX + cornerLength, offsetY + targetSize),
-            strokeWidth = strokeWidth
-        )
-        
-        // Bottom-right corner
-        drawLine(
-            color = Color.White,
-            start = Offset(offsetX + targetSize - cornerLength, offsetY + targetSize),
-            end = Offset(offsetX + targetSize, offsetY + targetSize),
-            strokeWidth = strokeWidth
-        )
-        drawLine(
-            color = Color.White,
-            start = Offset(offsetX + targetSize, offsetY + targetSize - cornerLength),
-            end = Offset(offsetX + targetSize, offsetY + targetSize),
-            strokeWidth = strokeWidth
-        )
-    }
-}
-
-private fun processImageProxy(
+// Optimized image processing with singleton scanner
+private fun processImageProxyOptimized(
     imageProxy: ImageProxy,
     onQRCodeDetected: (String) -> Unit
 ) {
     val mediaImage = imageProxy.image
     if (mediaImage != null) {
         val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-        val scanner = BarcodeScanning.getClient()
         
-        scanner.process(image)
+        // Use singleton scanner with QR-only detection
+        MLKitScanner.scanner.process(image)
             .addOnSuccessListener { barcodes ->
-                for (barcode in barcodes) {
-                    when (barcode.valueType) {
-                        Barcode.TYPE_TEXT, Barcode.TYPE_URL -> {
-                            barcode.displayValue?.let { qrContent ->
-                                onQRCodeDetected(qrContent)
-                            }
-                        }
-                    }
+                // Process only first QR code for better performance
+                barcodes.firstOrNull()?.displayValue?.let { qrContent ->
+                    onQRCodeDetected(qrContent)
                 }
             }
             .addOnCompleteListener {
@@ -474,3 +399,8 @@ private fun processImageProxy(
         imageProxy.close()
     }
 }
+
+
+
+
+

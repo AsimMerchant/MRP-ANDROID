@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.mobilereceiptprinter"
         minSdk = 31
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.4.1"
+        versionCode = 16
+        versionName = "1.4.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
