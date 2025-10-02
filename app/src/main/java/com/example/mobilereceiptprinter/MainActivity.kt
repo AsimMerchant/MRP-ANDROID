@@ -572,26 +572,43 @@ AMOUNT: Rs. $amount
             printStatus = "Bluetooth permission not granted."
             return
         }
-        // Use fresh timestamp at the moment of print (may differ from creation time if delayed)
-        val printDate = nowDate()
-        val printTime = nowTime()
-        val receiptText = buildReceiptText(printDate, printTime, currentQRCode)
-        val connected = printerHelper.connectToDevice(device)
-        if (connected) {
-            val printed = printerHelper.printText(receiptText)
-            printStatus = if (printed) "Printed successfully!" else "Print failed."
-            printerHelper.closeConnection()
-            saveLastPrinter(device.address)
-
-            // Clear volunteer and amount for next receipt
-            if (printed) {
-                volunteer = ""
-                amount = ""
-                showPreview = false
-                printStatus = "✓ Printed! Ready for next receipt."
+        
+        // Move all Bluetooth operations to IO thread to prevent ANR
+        (context as ComponentActivity).lifecycleScope.launch {
+            try {
+                printStatus = "Connecting to printer..."
+                
+                val result = withContext(Dispatchers.IO) {
+                    // Use fresh timestamp at the moment of print (may differ from creation time if delayed)
+                    val printDate = nowDate()
+                    val printTime = nowTime()
+                    val receiptText = buildReceiptText(printDate, printTime, currentQRCode)
+                    
+                    val connected = printerHelper.connectToDevice(device)
+                    if (connected) {
+                        val printed = printerHelper.printText(receiptText)
+                        printerHelper.closeConnection()
+                        if (printed) {
+                            saveLastPrinter(device.address)
+                        }
+                        printed
+                    } else {
+                        false
+                    }
+                }
+                
+                // Update UI on main thread
+                if (result) {
+                    printStatus = "✓ Printed! Ready for next receipt."
+                    volunteer = ""
+                    amount = ""
+                    showPreview = false
+                } else {
+                    printStatus = "❌ Print failed. Please try again."
+                }
+            } catch (e: Exception) {
+                printStatus = "❌ Error: ${e.message}"
             }
-        } else {
-            printStatus = "Could not connect to printer."
         }
     }
 
@@ -599,42 +616,51 @@ AMOUNT: Rs. $amount
     fun printToDeviceWithDialog(device: BluetoothDevice) {
         (context as ComponentActivity).lifecycleScope.launch {
             try {
-                val printDate = nowDate()
-                val printTime = nowTime()
-                val receiptText = buildReceiptText(printDate, printTime, currentQRCode)
-                
-                val connected = printerHelper.connectToDevice(device)
-                if (connected) {
-                    val printed = printerHelper.printText(receiptText)
-                    printerHelper.closeConnection()
-                    saveLastPrinter(device.address)
+                // Move all Bluetooth operations to IO thread to prevent ANR
+                val result = withContext(Dispatchers.IO) {
+                    val printDate = nowDate()
+                    val printTime = nowTime()
+                    val receiptText = buildReceiptText(printDate, printTime, currentQRCode)
                     
-                    if (printed) {
-                        printingProgress = "✓ Receipt printed successfully!"
-                        kotlinx.coroutines.delay(1500)
-                        
-                        // Clear form for next receipt - do this AFTER dialog closes to avoid keyboard interference
-                        showPreview = false
-                        printStatus = ""
-                        showPrintingDialog = false
-                        isCreatingAndPrinting = false
-                        
-                        // Clear text fields after a small delay to ensure keyboard is fully dismissed
-                        kotlinx.coroutines.delay(100)
-                        volunteer = ""
-                        amount = ""
+                    val connected = printerHelper.connectToDevice(device)
+                    if (connected) {
+                        val printed = printerHelper.printText(receiptText)
+                        printerHelper.closeConnection()
+                        if (printed) {
+                            saveLastPrinter(device.address)
+                        }
+                        printed
                     } else {
-                        printingProgress = "❌ Print failed"
-                        kotlinx.coroutines.delay(2000)
-                        showPrintingDialog = false
-                        isCreatingAndPrinting = false
+                        false
                     }
+                }
+                
+                // Update UI on main thread based on result
+                if (result) {
+                    printingProgress = "✓ Receipt printed successfully!"
+                    kotlinx.coroutines.delay(1500)
+                    
+                    // Clear form for next receipt - do this AFTER dialog closes to avoid keyboard interference
+                    showPreview = false
+                    printStatus = ""
+                    showPrintingDialog = false
+                    isCreatingAndPrinting = false
+                    
+                    // Clear text fields after a small delay to ensure keyboard is fully dismissed
+                    kotlinx.coroutines.delay(100)
+                    volunteer = ""
+                    amount = ""
                 } else {
-                    printingProgress = "❌ Could not connect to printer"
+                    printingProgress = "❌ Print failed"
                     kotlinx.coroutines.delay(2000)
                     showPrintingDialog = false
                     isCreatingAndPrinting = false
                 }
+            } catch (e: Exception) {
+                printingProgress = "❌ Could not connect to printer"
+                kotlinx.coroutines.delay(2000)
+                showPrintingDialog = false
+                isCreatingAndPrinting = false
             } catch (e: Exception) {
                 printingProgress = "❌ Error: ${e.message}"
                 kotlinx.coroutines.delay(2000)
@@ -910,14 +936,14 @@ AMOUNT: Rs. $amount
                             showBillerSuggestions = false
                             showVolunteerSuggestions = false
                             
-                            // Dismiss keyboard immediately when button is pressed
-                            focusManager.clearFocus()
-                            
                             // Show dialog immediately - no blocking operations
                             createReceiptAndPrint()
                             
-                            // Run database refresh asynchronously without blocking dialog
+                            // Move keyboard dismissal and database refresh to async to avoid blocking dialog
                             scope.launch {
+                                // Dismiss keyboard asynchronously to prevent blocking dialog appearance
+                                focusManager.clearFocus()
+                                
                                 // Small delay to ensure dialog renders first
                                 delay(50)
                                 val db = AppDatabase.getDatabase(context)
