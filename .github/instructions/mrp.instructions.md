@@ -5,7 +5,7 @@ applyTo: '**'
 - Always use sequential thinking when answering.
 - Always provide sources or evidence for your answers.
 - If you are unsure about something, say "I don't know".
-- Update the progress_log.md file and other documentation after every significant change to document technical metrics, success criteria, next steps, and development notes.
+- Update all the md (markdown) files and other documentation after every significant change to document technical metrics, success criteria, next steps, and development notes.
 - I will perform build.
 
 ## Version Management

@@ -6,6 +6,7 @@ import androidx.room.Query
 import androidx.room.Update
 import androidx.room.Delete
 import androidx.room.OnConflictStrategy
+import androidx.room.Transaction
 
 @Dao
 interface ReceiptDao {
@@ -38,6 +39,23 @@ interface ReceiptDao {
 
     @Query("DELETE FROM receipts")
     suspend fun deleteAllReceipts()
+    
+    // Cascade delete methods that also clean up collections
+    @Transaction
+    suspend fun deleteAllReceiptsFromBillerWithCleanup(billerName: String) {
+        // Delete collection records for receipts from this biller
+        deleteCollectionsForBiller(billerName)
+        // Delete the receipts
+        deleteAllReceiptsFromBiller(billerName)
+    }
+    
+
+    
+    @Query("""
+        DELETE FROM collected_receipts 
+        WHERE receiptId IN (SELECT id FROM receipts WHERE biller = :billerName)
+    """)
+    suspend fun deleteCollectionsForBiller(billerName: String)
 
     // NEW: Multi-device sync queries
     @Query("SELECT * FROM receipts WHERE id = :receiptId")
@@ -63,6 +81,22 @@ interface ReceiptDao {
 
     @Query("UPDATE receipts SET syncStatus = :status WHERE id = :receiptId")
     suspend fun updateSyncStatus(receiptId: String, status: String)
+    
+    // Audit and reporting queries
+    @Query("SELECT COUNT(*) FROM receipts")
+    suspend fun getTotalReceiptsCount(): Int
+    
+    @Query("SELECT SUM(CAST(REPLACE(amount, ',', '') AS REAL)) FROM receipts")
+    suspend fun getTotalReceiptsAmount(): Double?
+    
+    @Query("SELECT COUNT(*) FROM receipts WHERE isCollected = 0")
+    suspend fun getUncollectedReceiptsCount(): Int
+    
+    @Query("SELECT SUM(CAST(REPLACE(amount, ',', '') AS REAL)) FROM receipts WHERE isCollected = 0")
+    suspend fun getUncollectedReceiptsAmount(): Double?
+    
+    @Query("SELECT * FROM receipts WHERE isCollected = 0 ORDER BY receiptNumber DESC")
+    suspend fun getUncollectedReceiptsList(): List<Receipt>
 }
 
 @Dao
@@ -102,6 +136,36 @@ interface CollectedReceiptDao {
 
     @Query("DELETE FROM collected_receipts")
     suspend fun deleteAllCollections()
+    
+    // Collection summary queries - only show collections where receipt still exists
+    @Query("""
+        SELECT r.*, cr.collectionDate, cr.collectionTime, cr.collectorName, cr.scannedBy 
+        FROM receipts r 
+        INNER JOIN collected_receipts cr ON r.id = cr.receiptId 
+        ORDER BY cr.collectionDate DESC, cr.collectionTime DESC
+    """)
+    suspend fun getCollectedReceiptsWithDetails(): List<CollectedReceiptWithDetails>
+    
+    @Query("""
+        SELECT COUNT(*) 
+        FROM collected_receipts cr 
+        INNER JOIN receipts r ON cr.receiptId = r.id
+    """)
+    suspend fun getCollectedReceiptsCount(): Int
+    
+    @Query("""
+        SELECT SUM(CAST(REPLACE(r.amount, ',', '') AS REAL)) 
+        FROM receipts r 
+        INNER JOIN collected_receipts cr ON r.id = cr.receiptId
+    """)
+    suspend fun getTotalCollectedAmount(): Double?
+    
+    // Clean up orphaned collection records (where receipt no longer exists)
+    @Query("""
+        DELETE FROM collected_receipts 
+        WHERE receiptId NOT IN (SELECT id FROM receipts)
+    """)
+    suspend fun cleanupOrphanedCollections()
 }
 
 @Dao

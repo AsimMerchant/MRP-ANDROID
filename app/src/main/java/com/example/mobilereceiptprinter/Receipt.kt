@@ -62,3 +62,28 @@ data class Suggestion(
     val type: String, // "biller" or "volunteer"
     val name: String
 )
+
+/**
+ * Data class for collection report - combines receipt and collection details
+ */
+data class CollectedReceiptWithDetails(
+    // Receipt fields
+    val id: String,
+    val receiptNumber: Int,
+    val biller: String,
+    val volunteer: String,
+    val amount: String,
+    val date: String,
+    val time: String,
+    val qrCode: String,
+    val deviceId: String,
+    val isCollected: Boolean,
+    val syncStatus: String,
+    val lastModified: Long,
+    val version: Int,
+    // Collection fields
+    val collectionDate: String,
+    val collectionTime: String,
+    val collectorName: String,
+    val scannedBy: String
+)
