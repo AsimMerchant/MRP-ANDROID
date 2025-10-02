@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -90,6 +91,9 @@ fun CameraScannerScreen(
         )
     }
     
+    // Flashlight state management
+    var isFlashlightOn by remember { mutableStateOf(false) }
+    
     val scanResults by scannerViewModel.scanResults.collectAsState()
     val isScanning by scannerViewModel.isScanning.collectAsState()
     
@@ -134,7 +138,9 @@ fun CameraScannerScreen(
                     CameraPreview(
                         onQRCodeDetected = { qrContent ->
                             scannerViewModel.processScan(qrContent)
-                        }
+                        },
+                        isFlashlightOn = isFlashlightOn,
+                        onFlashlightToggle = { isFlashlightOn = !isFlashlightOn }
                     )
                 } else {
                     // Permission denied state
@@ -326,53 +332,105 @@ fun ScanResultCard(result: ScanResult) {
 
 @Composable
 fun CameraPreview(
-    onQRCodeDetected: (String) -> Unit
+    onQRCodeDetected: (String) -> Unit,
+    isFlashlightOn: Boolean,
+    onFlashlightToggle: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     
-    AndroidView(
-        factory = { ctx ->
-            val previewView = PreviewView(ctx)
-            val executor = ContextCompat.getMainExecutor(ctx)
-            
-            cameraProviderFuture.addListener({
-                val cameraProvider = cameraProviderFuture.get()
+    // Store camera reference for flashlight control
+    var camera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
+    
+    // Check if camera has flash capability
+    var hasFlash by remember { mutableStateOf(false) }
+    
+    // Handle flashlight control with error handling
+    LaunchedEffect(isFlashlightOn, camera) {
+        camera?.let { cam ->
+            try {
+                // Check if camera has flash capability
+                val cameraInfo = cam.cameraInfo
+                hasFlash = cameraInfo.hasFlashUnit()
                 
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
+                // Only enable torch if camera has flash
+                if (hasFlash) {
+                    cam.cameraControl.enableTorch(isFlashlightOn)
                 }
+            } catch (e: Exception) {
+                // Handle flashlight control error silently
+                hasFlash = false
+            }
+        }
+    }
+    
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx ->
+                val previewView = PreviewView(ctx)
+                val executor = ContextCompat.getMainExecutor(ctx)
                 
-                val imageAnalyzer = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also {
-                        // Use background thread for better performance
-                        it.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy ->
-                            processImageProxyOptimized(imageProxy, onQRCodeDetected)
-                        }
+                cameraProviderFuture.addListener({
+                    val cameraProvider = cameraProviderFuture.get()
+                    
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
                     }
+                    
+                    val imageAnalyzer = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also {
+                            // Use background thread for better performance
+                            it.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy ->
+                                processImageProxyOptimized(imageProxy, onQRCodeDetected)
+                            }
+                        }
+                    
+                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                    
+                    try {
+                        cameraProvider.unbindAll()
+                        camera = cameraProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            cameraSelector,
+                            preview,
+                            imageAnalyzer
+                        )
+                    } catch (exc: Exception) {
+                        // Handle camera binding failure
+                    }
+                }, executor)
                 
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                
-                try {
-                    cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        preview,
-                        imageAnalyzer
-                    )
-                } catch (exc: Exception) {
-                    // Handle camera binding failure
-                }
-            }, executor)
-            
-            previewView
-        },
-        modifier = Modifier.fillMaxSize()
-    )
+                previewView
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        
+        // Flashlight toggle button (only show if camera has flash)
+        if (hasFlash) {
+            FloatingActionButton(
+                onClick = onFlashlightToggle,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp),
+                containerColor = if (isFlashlightOn) 
+                    MaterialTheme.colorScheme.primary 
+                else 
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                contentColor = if (isFlashlightOn) 
+                    MaterialTheme.colorScheme.onPrimary 
+                else 
+                    MaterialTheme.colorScheme.onSurface
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = if (isFlashlightOn) "Turn flashlight off" else "Turn flashlight on"
+                )
+            }
+        }
+    }
 }
 
 // Optimized image processing with singleton scanner
