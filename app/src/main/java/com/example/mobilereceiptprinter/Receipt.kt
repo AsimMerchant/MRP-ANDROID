@@ -22,6 +22,13 @@ data class Receipt(
     val version: Int = 1 // For optimistic concurrency control
 )
 
+// Summary data class for performance-optimized Reports screen
+data class BillerSummary(
+    val biller: String,
+    val receiptCount: Int,
+    val totalAmount: Double
+)
+
 @Entity(tableName = "collected_receipts")
 data class CollectedReceipt(
     @PrimaryKey val id: String = UUID.randomUUID().toString(), // Global UUID

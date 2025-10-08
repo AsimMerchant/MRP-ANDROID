@@ -390,6 +390,16 @@ fun CameraPreview(
     // Check if camera has flash capability
     var hasFlash by remember { mutableStateOf(false) }
     
+    // Create executor for image analysis - tied to composable lifecycle to prevent thread leak
+    val imageAnalyzerExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+    
+    // Cleanup executor when composable leaves composition
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            imageAnalyzerExecutor.shutdown()
+        }
+    }
+    
     // Handle flashlight control with error handling
     LaunchedEffect(isFlashlightOn, camera) {
         camera?.let { cam ->
@@ -427,7 +437,7 @@ fun CameraPreview(
                         .build()
                         .also {
                             // Use background thread for better performance
-                            it.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy ->
+                            it.setAnalyzer(imageAnalyzerExecutor) { imageProxy ->
                                 processImageProxyOptimized(imageProxy, onQRCodeDetected)
                             }
                         }

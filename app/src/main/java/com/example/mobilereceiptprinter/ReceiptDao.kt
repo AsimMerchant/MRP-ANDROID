@@ -97,6 +97,19 @@ interface ReceiptDao {
     
     @Query("SELECT * FROM receipts WHERE isCollected = 0 ORDER BY receiptNumber DESC")
     suspend fun getUncollectedReceiptsList(): List<Receipt>
+    
+    // Performance-optimized query for Reports screen with 10K+ receipts
+    // Returns aggregated summary per biller instead of loading all receipts
+    @Query("""
+        SELECT 
+            biller,
+            COUNT(*) as receiptCount,
+            SUM(CAST(REPLACE(amount, ',', '') AS REAL)) as totalAmount
+        FROM receipts
+        GROUP BY biller
+        ORDER BY biller
+    """)
+    suspend fun getBillerSummaries(): List<BillerSummary>
 }
 
 @Dao
