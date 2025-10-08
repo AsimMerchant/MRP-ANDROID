@@ -2,7 +2,7 @@
 
 A modern Android application built with Kotlin and Jetpack Compose for creating and printing receipts via Bluetooth thermal printers with QR code generation and cross-device collection tracking. Perfect for small businesses, events, and mobile payment collection with multi-device synchronization.
 
-**Current Status**: Performance Optimized ⚡ | Instant Dialog Response | ANR-Free Printing | 98% UI Improvement | Production Ready 🚀 | Version 1.4.3
+**Current Status**: UI Performance Optimization In Progress 📱⚡ | Camera Resource Management Fixed | Memory Optimizations Applied | Version 1.4.4
 
 ## 🌟 Features
 
@@ -116,8 +116,30 @@ app/src/main/java/com/example/mobilereceiptprinter/
 - **Background Processing**: Image analysis moved to dedicated thread freeing UI thread
 - **QR-Only Detection**: Focused detection mode instead of generic barcode scanning
 
+### UI Performance Optimizations (October 8, 2025) 📱⚡
+
+#### Camera Resource Management ✅ **COMPLETED**
+- **Issue**: Camera executor and provider not properly cleaned up causing memory leaks
+- **Solution**: Added comprehensive cleanup with `cameraProvider.unbindAll()` and proper executor shutdown
+- **Impact**: Eliminates battery drain and memory growth during extended scanning sessions
+- **Files**: `CameraScannerScreen.kt` - Enhanced DisposableEffect lifecycle management
+
+#### QR Code Preview Memory Optimization ✅ **COMPLETED**
+- **Issue**: QR code bitmaps displayed in preview causing ~57KB memory allocation per preview
+- **Solution**: Removed QR code display from preview entirely (still prints on receipt)
+- **Impact**: Reduced memory pressure, faster preview rendering
+- **Files**: `MainActivity.kt` - Simplified ReceiptPreviewCard to text-only display
+- **Verification**: QR code printing functionality confirmed intact
+
+#### Planned Optimizations 🔄
+- **MainActivity Initialization**: Move blocking initialization to background threads
+- **Field Suggestions**: Implement fuzzy matching and intelligent ranking
+- **Database Queries**: Optimize suggestion filtering to reduce input lag
+
 ### Technical Improvements
 - **Focus Management**: `focusManager.clearFocus()` moved from synchronous to async execution preventing 50-200ms UI blocking
+- **Memory Management**: Eliminated bitmap allocations in preview screens
+- **Resource Cleanup**: Proper lifecycle management for camera and executor resources
 - **Bluetooth Threading**: `withContext(Dispatchers.IO)` for all printer operations preventing ANR during connection/printing
 - **QR Generation**: SHA-256 hashing and UUID generation moved to background coroutines
 - **Receipt Creation**: All object instantiation and database operations run asynchronously  

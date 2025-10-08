@@ -41,6 +41,7 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Camera Scanner Screen for QR Code Collection
@@ -386,6 +387,7 @@ fun CameraPreview(
     
     // Store camera reference for flashlight control
     var camera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     
     // Check if camera has flash capability
     var hasFlash by remember { mutableStateOf(false) }
@@ -393,10 +395,29 @@ fun CameraPreview(
     // Create executor for image analysis - tied to composable lifecycle to prevent thread leak
     val imageAnalyzerExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
     
-    // Cleanup executor when composable leaves composition
+    // Comprehensive cleanup when composable leaves composition
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose {
-            imageAnalyzerExecutor.shutdown()
+            // Properly cleanup camera resources
+            try {
+                cameraProvider?.unbindAll()
+                camera = null
+                cameraProvider = null
+            } catch (e: Exception) {
+                // Log error but don't crash
+                android.util.Log.w("CameraPreview", "Error during camera cleanup: ${e.message}")
+            }
+            
+            // Shutdown executor with timeout to prevent hanging
+            try {
+                imageAnalyzerExecutor.shutdown()
+                if (!imageAnalyzerExecutor.awaitTermination(1000, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                    imageAnalyzerExecutor.shutdownNow()
+                }
+            } catch (e: Exception) {
+                imageAnalyzerExecutor.shutdownNow()
+                android.util.Log.w("CameraPreview", "Executor shutdown interrupted: ${e.message}")
+            }
         }
     }
     
@@ -426,34 +447,42 @@ fun CameraPreview(
                 val executor = ContextCompat.getMainExecutor(ctx)
                 
                 cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
-                    
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-                    
-                    val imageAnalyzer = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                        .also {
-                            // Use background thread for better performance
-                            it.setAnalyzer(imageAnalyzerExecutor) { imageProxy ->
-                                processImageProxyOptimized(imageProxy, onQRCodeDetected)
-                            }
-                        }
-                    
-                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                    
                     try {
-                        cameraProvider.unbindAll()
-                        camera = cameraProvider.bindToLifecycle(
+                        val provider = cameraProviderFuture.get()
+                        cameraProvider = provider // Store reference for cleanup
+                        
+                        val preview = Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
+                        
+                        val imageAnalyzer = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+                            .also {
+                                // Use background thread for better performance
+                                it.setAnalyzer(imageAnalyzerExecutor) { imageProxy ->
+                                    processImageProxyOptimized(imageProxy, onQRCodeDetected)
+                                }
+                            }
+                        
+                        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                        
+                        // Ensure we unbind any existing use cases first
+                        provider.unbindAll()
+                        
+                        // Bind camera to lifecycle with proper error handling
+                        camera = provider.bindToLifecycle(
                             lifecycleOwner,
                             cameraSelector,
                             preview,
                             imageAnalyzer
                         )
+                        
                     } catch (exc: Exception) {
-                        // Handle camera binding failure
+                        // Handle camera binding failure with logging
+                        android.util.Log.e("CameraPreview", "Camera binding failed: ${exc.message}", exc)
+                        camera = null
+                        cameraProvider = null
                     }
                 }, executor)
                 
