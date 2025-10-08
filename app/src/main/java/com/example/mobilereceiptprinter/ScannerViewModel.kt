@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -17,72 +20,130 @@ import java.util.*
  * - Scan results management
  * - Database interactions for receipt validation
  * - Collection status updates
+ * - Phase 4.1: Rapid scanning feedback (overlay + haptic)
  */
 class ScannerViewModel(
     private val database: AppDatabase,
     private val deviceManager: DeviceManager
 ) : ViewModel() {
     
+    /**
+     * Phase 4.1: Scan status for immediate feedback
+     */
+    sealed class ScanStatus {
+        data class Success(val receiptNumber: Int) : ScanStatus()
+        data class Duplicate(val receiptNumber: Int) : ScanStatus()
+        object Invalid : ScanStatus()
+    }
+    
+    // Phase 4.1: Feedback state for rapid scanning
+    private val _lastScanStatus = MutableStateFlow<ScanStatus?>(null)
+    val lastScanStatus: StateFlow<ScanStatus?> = _lastScanStatus.asStateFlow()
+    
+    private val _showOverlay = MutableStateFlow(false)
+    val showOverlay: StateFlow<Boolean> = _showOverlay.asStateFlow()
+    
+    // Existing state
     private val _scanResults = MutableStateFlow<List<ScanResult>>(emptyList())
     val scanResults: StateFlow<List<ScanResult>> = _scanResults.asStateFlow()
     
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
     
+    // Phase 4.1: Mutex lock to prevent race conditions during rapid scanning
+    private val scanLock = Mutex()
+    
     private val recentScans = mutableSetOf<String>()
-    private val scanCooldown = 500L // 500ms cooldown for instant scanning like Paytm
-    private val scanTimestamps = mutableMapOf<String, Long>()
+    private val scanCooldown = 400L // 400ms global cooldown for rapid scanning
+    private var lastScanTime = 0L // Global cooldown (not per-QR)
     
     /**
      * Process a scanned QR code
-     * Includes cooldown logic to prevent duplicate rapid scans
+     * Phase 4.1: Enhanced with Mutex lock for race condition prevention
+     * and overlay feedback for rapid scanning (1 scan/second target)
      */
     fun processScan(qrContent: String) {
         viewModelScope.launch {
-            val currentTime = System.currentTimeMillis()
-            val lastScanTime = scanTimestamps[qrContent] ?: 0
-            
-            // Check cooldown period
-            if (currentTime - lastScanTime < scanCooldown) {
-                return@launch
-            }
-            
-            scanTimestamps[qrContent] = currentTime
-            _isScanning.value = true
-            
-            try {
-                // Validate QR code format and check database
-                val scanResult = validateAndProcessQR(qrContent)
+            // Phase 4.1: Use Mutex to prevent race conditions during rapid scanning
+            scanLock.withLock {
+                val currentTime = System.currentTimeMillis()
                 
-                // Add to results (keep last 10 scans)
-                val currentResults = _scanResults.value.toMutableList()
-                currentResults.add(0, scanResult) // Add to top
-                
-                if (currentResults.size > 10) {
-                    currentResults.removeAt(currentResults.lastIndex)
+                // Global cooldown check (prevents rapid duplicate scans)
+                if (currentTime - lastScanTime < scanCooldown) {
+                    return@launch
                 }
                 
-                _scanResults.value = currentResults
+                lastScanTime = currentTime
                 
-            } catch (e: Exception) {
-                // Handle scanning error
-                val errorResult = ScanResult(
-                    qrContent = qrContent.take(20) + "...",
-                    timestamp = getCurrentTimestamp(),
-                    isValid = false,
-                    receiptInfo = "Scan Error: ${e.message ?: "Unknown error"}"
-                )
+                // Clear previous status immediately for instant feedback on new scan
+                _lastScanStatus.value = null
+                _showOverlay.value = false
                 
-                val currentResults = _scanResults.value.toMutableList()
-                currentResults.add(0, errorResult)
-                if (currentResults.size > 10) {
-                    currentResults.removeAt(currentResults.lastIndex)
+                _isScanning.value = true
+                
+                try {
+                    // Validate QR code format and check database
+                    val scanResult = validateAndProcessQR(qrContent)
+                    
+                    // Phase 4.1: Set scan status for overlay + haptic feedback
+                    _lastScanStatus.value = when {
+                        scanResult.isValid && scanResult.receiptNumber != null -> 
+                            ScanStatus.Success(scanResult.receiptNumber)
+                        scanResult.receiptInfo.contains("already collected", ignoreCase = true) && scanResult.receiptNumber != null -> 
+                            ScanStatus.Duplicate(scanResult.receiptNumber)
+                        else -> ScanStatus.Invalid
+                    }
+                    
+                    // Phase 4.1: Show overlay (400ms for faster scanning)
+                    _showOverlay.value = true
+                    
+                    // Launch separate coroutine to auto-dismiss overlay without blocking next scan
+                    viewModelScope.launch {
+                        delay(400)
+                        _showOverlay.value = false
+                        // Don't clear status here - let next scan clear it immediately
+                    }
+                    
+                    // Add to results (keep last 10 scans)
+                    val currentResults = _scanResults.value.toMutableList()
+                    currentResults.add(0, scanResult) // Add to top
+                    
+                    if (currentResults.size > 10) {
+                        currentResults.removeAt(currentResults.lastIndex)
+                    }
+                    
+                    _scanResults.value = currentResults
+                
+                } catch (e: Exception) {
+                    // Phase 4.1: Show error feedback overlay
+                    _lastScanStatus.value = ScanStatus.Invalid
+                    _showOverlay.value = true
+                    
+                    // Launch separate coroutine to auto-dismiss
+                    viewModelScope.launch {
+                        delay(400)
+                        _showOverlay.value = false
+                    }
+                    
+                    // Handle scanning error
+                    val errorResult = ScanResult(
+                        qrContent = qrContent.take(20) + "...",
+                        timestamp = getCurrentTimestamp(),
+                        isValid = false,
+                        receiptInfo = "Scan Error: ${e.message ?: "Unknown error"}"
+                    )
+                    
+                    val currentResults = _scanResults.value.toMutableList()
+                    currentResults.add(0, errorResult)
+                    if (currentResults.size > 10) {
+                        currentResults.removeAt(currentResults.lastIndex)
+                    }
+                    _scanResults.value = currentResults
+                    
+                } finally {
+                    _isScanning.value = false
                 }
-                _scanResults.value = currentResults
-                
-            } finally {
-                _isScanning.value = false
-            }
+            } // End of scanLock.withLock
         }
     }
     
@@ -113,10 +174,10 @@ class ScannerViewModel(
             )
         }
         
-        // Validate receipt exists in database
-        val isValidReceipt = validateReceiptExists(receiptId)
+        // Fetch receipt from database
+        val receipt = getReceiptById(receiptId)
         
-        if (!isValidReceipt) {
+        if (receipt == null) {
             return ScanResult(
                 qrContent = qrContent.take(20) + "...",
                 timestamp = getCurrentTimestamp(),
@@ -133,7 +194,8 @@ class ScannerViewModel(
                 qrContent = qrContent.take(20) + "...",
                 timestamp = getCurrentTimestamp(),
                 isValid = false,
-                receiptInfo = "Receipt already collected"
+                receiptInfo = "Receipt already collected",
+                receiptNumber = receipt.receiptNumber // Pass receipt number for overlay
             )
         }
         
@@ -144,8 +206,21 @@ class ScannerViewModel(
             qrContent = qrContent,
             timestamp = getCurrentTimestamp(),
             isValid = true,
-            receiptInfo = "Receipt #${receiptId.take(8)} - Successfully collected!"
+            receiptInfo = "Receipt #${receipt.receiptNumber} - Successfully collected!",
+            receiptNumber = receipt.receiptNumber // Pass receipt number for overlay
         )
+    }
+    
+    /**
+     * Get receipt by ID from database
+     */
+    private suspend fun getReceiptById(receiptId: String): Receipt? {
+        return try {
+            database.receiptDao().getReceiptById(receiptId)
+        } catch (e: Exception) {
+            android.util.Log.e("ScannerVM", "Error fetching receipt: ${e.message}")
+            null
+        }
     }
     
     /**
@@ -224,6 +299,6 @@ class ScannerViewModel(
      */
     fun clearResults() {
         _scanResults.value = emptyList()
-        scanTimestamps.clear()
+        lastScanTime = 0L // Reset global cooldown timer
     }
 }

@@ -24,6 +24,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -687,9 +689,14 @@ AMOUNT: Rs. $amount
         // Generate unique QR code for receipt (Phase 3)
         val receiptId = java.util.UUID.randomUUID().toString()
         val receiptData = "$biller$volunteer$amount$creationDate$creationTime"
+        
+        // Cache device manager to avoid repeated context casting
+        val deviceManager = (context as MainActivity).deviceManager
+        val deviceId = deviceManager.getDeviceId()
+        
         val qrCode = QRCodeGenerator.generateQRContent(
             receiptId = receiptId,
-            deviceId = (context as MainActivity).deviceManager.getDeviceId(),
+            deviceId = deviceId,
             receiptData = receiptData
         )
         currentQRCode = qrCode  // Store for printing/preview
@@ -703,7 +710,7 @@ AMOUNT: Rs. $amount
             date = creationDate,
             time = creationTime,
             qrCode = qrCode,  // Populate QR code field
-            deviceId = (context as MainActivity).deviceManager.getDeviceId(),  // Track device that created receipt
+            deviceId = deviceId,  // Track device that created receipt
             lastModified = System.currentTimeMillis()
         )
         (context as ComponentActivity).lifecycleScope.launch {
@@ -756,9 +763,14 @@ AMOUNT: Rs. $amount
             val amountValue = amount.toDoubleOrNull() ?: 0.0
             val receiptId = java.util.UUID.randomUUID().toString()
             val receiptData = "$biller$volunteer$amount$creationDate$creationTime"
+            
+            // Cache device manager to avoid repeated context casting
+            val deviceManager = (context as MainActivity).deviceManager
+            val deviceId = deviceManager.getDeviceId()
+            
             val qrCode = QRCodeGenerator.generateQRContent(
                 receiptId = receiptId,
-                deviceId = (context as MainActivity).deviceManager.getDeviceId(),
+                deviceId = deviceId,
                 receiptData = receiptData
             )
             currentQRCode = qrCode
@@ -772,7 +784,7 @@ AMOUNT: Rs. $amount
                 date = creationDate,
                 time = creationTime,
                 qrCode = qrCode,
-                deviceId = (context as MainActivity).deviceManager.getDeviceId(),
+                deviceId = deviceId,
                 lastModified = System.currentTimeMillis()
             )
             
@@ -818,9 +830,11 @@ AMOUNT: Rs. $amount
             val billers = withContext(Dispatchers.IO) { db.suggestionDao().getAllBillerSuggestions() }
             val volunteers = withContext(Dispatchers.IO) { db.suggestionDao().getAllVolunteerSuggestions() }
             billerSuggestions.clear()
-            billerSuggestions.addAll(billers)
+            // Limit suggestions to last 50 to prevent memory buildup
+            billerSuggestions.addAll(billers.takeLast(50))
             volunteerSuggestions.clear()
-            volunteerSuggestions.addAll(volunteers)
+            // Limit suggestions to last 50 to prevent memory buildup  
+            volunteerSuggestions.addAll(volunteers.takeLast(50))
         }
     }
 
@@ -1118,9 +1132,16 @@ private fun ReceiptPreviewCard(receiptPreviewText: String, qrCode: String = "") 
                     if (qrCode.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(12.dp))
                         
-                        // Generate and display QR code bitmap
+                        // Generate and display QR code bitmap with proper memory management
                         val qrBitmap = remember(qrCode) {
                             QRCodeGenerator.generateQRBitmap(qrCode, 120)
+                        }
+                        
+                        // Clean up bitmap when composable leaves composition
+                        DisposableEffect(qrBitmap) {
+                            onDispose {
+                                qrBitmap?.recycle()
+                            }
                         }
                         
                         if (qrBitmap != null) {
@@ -1414,40 +1435,30 @@ private fun PrinterSelectionCard(
 @Composable
 fun ReportsScreen(navController: NavHostController) {
     val context = LocalContext.current
-    val receipts = remember { mutableStateListOf<Receipt>() }
-    val billers = remember { mutableStateListOf<String>() }
+    val billerSummaries = remember { mutableStateListOf<BillerSummary>() }
+    val expandedBillers = remember { mutableStateMapOf<String, Boolean>() }
+    val billerReceipts = remember { mutableStateMapOf<String, List<Receipt>>() }
     val scope = rememberCoroutineScope()
-    var selectedBiller by remember { mutableStateOf<String?>(null) }
     var showDeleteBillerDialog by remember { mutableStateOf(false) }
     var billerToDelete by remember { mutableStateOf<String?>(null) }
+    var receiptCountToDelete by remember { mutableStateOf(0) }
 
+    // PERFORMANCE FIX: Load only summaries initially instead of ALL receipts
     LaunchedEffect(Unit) {
         scope.launch {
             val db = AppDatabase.getDatabase(context)
-            val allReceipts = withContext(Dispatchers.IO) { db.receiptDao().getAllReceipts() }
-            val allBillers = withContext(Dispatchers.IO) { db.receiptDao().getAllBillers() }
-            receipts.clear()
-            receipts.addAll(allReceipts)
-            billers.clear()
-            billers.addAll(allBillers)
+            val summaries = withContext(Dispatchers.IO) { db.receiptDao().getBillerSummaries() }
+            billerSummaries.clear()
+            billerSummaries.addAll(summaries)
         }
-    }
-
-    // Memoize expensive calculations
-    val receiptsByBiller = remember(receipts.size) {
-        receipts.groupBy { it.biller }
-    }
-
-    val billerEntries = remember(receiptsByBiller) {
-        receiptsByBiller.entries.toList()
     }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(12.dp) // Reduced padding from 16.dp to 12.dp
+            .padding(12.dp)
             .windowInsetsPadding(WindowInsets.systemBars),
-        verticalArrangement = Arrangement.spacedBy(12.dp) // Reduced spacing from 16.dp to 12.dp
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item(key = "header") {
             Text(
@@ -1457,7 +1468,7 @@ fun ReportsScreen(navController: NavHostController) {
             )
         }
 
-        if (billerEntries.isEmpty()) {
+        if (billerSummaries.isEmpty()) {
             item(key = "empty_state") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -1473,16 +1484,35 @@ fun ReportsScreen(navController: NavHostController) {
                 }
             }
         } else {
-            // Use itemsIndexed with stable keys for better performance
             itemsIndexed(
-                items = billerEntries,
-                key = { _, (biller, _) -> "biller_$biller" }
-            ) { _, (biller, billerReceipts) ->
-                BillerCard(
-                    biller = biller,
-                    billerReceipts = billerReceipts,
+                items = billerSummaries,
+                key = { _, summary -> "biller_${summary.biller}" }
+            ) { _, summary ->
+                ExpandableBillerCard(
+                    summary = summary,
+                    isExpanded = expandedBillers[summary.biller] ?: false,
+                    receipts = billerReceipts[summary.biller],
+                    onExpandToggle = {
+                        val currentlyExpanded = expandedBillers[summary.biller] ?: false
+                        if (!currentlyExpanded) {
+                            // Load receipts on demand when expanding
+                            scope.launch {
+                                val db = AppDatabase.getDatabase(context)
+                                val receipts = withContext(Dispatchers.IO) {
+                                    db.receiptDao().getReceiptsByBiller(summary.biller)
+                                }
+                                billerReceipts[summary.biller] = receipts
+                                expandedBillers[summary.biller] = true
+                            }
+                        } else {
+                            // Collapse and free memory to prevent accumulation
+                            expandedBillers[summary.biller] = false
+                            billerReceipts.remove(summary.biller) // Clear cached receipts to free memory
+                        }
+                    },
                     onDeleteAll = {
-                        billerToDelete = biller
+                        billerToDelete = summary.biller
+                        receiptCountToDelete = summary.receiptCount
                         showDeleteBillerDialog = true
                     }
                 )
@@ -1499,7 +1529,7 @@ fun ReportsScreen(navController: NavHostController) {
             },
             title = { Text("Delete All Receipts") },
             text = {
-                Text("Are you sure you want to delete ALL receipts for \"$billerToDelete\"? This will permanently remove ${receiptsByBiller[billerToDelete]?.size ?: 0} receipts. The next receipt for this biller will start from #1.")
+                Text("Are you sure you want to delete ALL receipts for \"$billerToDelete\"? This will permanently remove $receiptCountToDelete receipts. The next receipt for this biller will start from #1.")
             },
             confirmButton = {
                 Button(
@@ -1507,24 +1537,25 @@ fun ReportsScreen(navController: NavHostController) {
                         scope.launch {
                             val db = AppDatabase.getDatabase(context)
                             withContext(Dispatchers.IO) {
-                                // Delete all receipts for this biller
                                 db.receiptDao().deleteAllReceiptsFromBillerWithCleanup(billerToDelete!!)
                             }
 
-                            // Reset the biller's receipt count in SharedPreferences so next receipt starts from #1
+                            // Reset the biller's receipt count in SharedPreferences
                             val billerPrefs = context.getSharedPreferences("biller_$billerToDelete", Context.MODE_PRIVATE)
                             billerPrefs.edit {
                                 putInt("receipt_count", 0)
                                 putFloat("total_amount", 0f)
                             }
 
-                            // Refresh the list
-                            val allReceipts = withContext(Dispatchers.IO) { db.receiptDao().getAllReceipts() }
-                            val allBillers = withContext(Dispatchers.IO) { db.receiptDao().getAllBillers() }
-                            receipts.clear()
-                            receipts.addAll(allReceipts)
-                            billers.clear()
-                            billers.addAll(allBillers)
+                            // Refresh summaries
+                            val summaries = withContext(Dispatchers.IO) { db.receiptDao().getBillerSummaries() }
+                            billerSummaries.clear()
+                            billerSummaries.addAll(summaries)
+                            
+                            // Clear cached receipts and expanded state for deleted biller
+                            billerReceipts.remove(billerToDelete)
+                            expandedBillers.remove(billerToDelete)
+                            
                             showDeleteBillerDialog = false
                             billerToDelete = null
                         }
@@ -1546,80 +1577,98 @@ fun ReportsScreen(navController: NavHostController) {
             }
         )
     }
-
-
 }
 
-// Extracted optimized BillerCard component to reduce recomposition
+// Performance-optimized expandable BillerCard with on-demand receipt loading
 @Composable
-private fun BillerCard(
-    biller: String,
-    billerReceipts: List<Receipt>,
+private fun ExpandableBillerCard(
+    summary: BillerSummary,
+    isExpanded: Boolean,
+    receipts: List<Receipt>?,
+    onExpandToggle: () -> Unit,
     onDeleteAll: () -> Unit
 ) {
-    // Memoize total calculation
-    val total = remember(billerReceipts) {
-        billerReceipts.sumOf { it.amount.toDoubleOrNull() ?: 0.0 }
-    }
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // First line: Biller name and receipt count
-            Text(
-                text = "$biller : ${billerReceipts.size} ${if (billerReceipts.size == 1) "receipt" else "receipts"}",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Second line: Total amount and delete button
+            // Clickable header with expand/collapse icon
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onExpandToggle),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Total: Rs. ${String.format(Locale.getDefault(), "%.2f", total)}",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        text = "${summary.biller} : ${summary.receiptCount} ${if (summary.receiptCount == 1) "receipt" else "receipts"}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Total: Rs. ${String.format(Locale.getDefault(), "%.2f", summary.totalAmount)}",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
-
-                // Delete Biller Button
-                OutlinedButton(
-                    onClick = onDeleteAll,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    ),
-                    modifier = Modifier.height(40.dp)
-                ) {
-                    Text(
-                        "Delete All",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+                
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Below: All the receipts
-            billerReceipts.forEach { receipt ->
-                key(receipt.id) {
-                    ReceiptCard(
-                        receipt = receipt
+            // Delete button always visible
+            OutlinedButton(
+                onClick = onDeleteAll,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                ),
+                modifier = Modifier.height(40.dp)
+            ) {
+                Text(
+                    "Delete All",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            // Show receipts only when expanded and loaded
+            if (isExpanded) {
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                if (receipts == null) {
+                    // Loading state
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (receipts.isEmpty()) {
+                    // Empty state (shouldn't happen in normal flow)
+                    Text(
+                        "No receipts found",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(8.dp)
                     )
+                } else {
+                    // Show all receipts for this biller
+                    receipts.forEach { receipt ->
+                        key(receipt.id) {
+                            ReceiptCard(receipt = receipt)
+                        }
+                    }
                 }
             }
         }

@@ -17,6 +17,9 @@
     
     <!-- Camera Permission for QR Code Scanning (Phase 4) -->
     <uses-permission android:name="android.permission.CAMERA" />
+    
+    <!-- Vibration Permission for Haptic Feedback (Phase 4.1) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="true"

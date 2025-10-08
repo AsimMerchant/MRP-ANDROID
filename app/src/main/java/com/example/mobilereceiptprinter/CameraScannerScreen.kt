@@ -1,30 +1,36 @@
 package com.example.mobilereceiptprinter
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.remember
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -51,7 +57,8 @@ data class ScanResult(
     val qrContent: String,
     val timestamp: String,
     val isValid: Boolean,
-    val receiptInfo: String
+    val receiptInfo: String,
+    val receiptNumber: Int? = null // Receipt number for overlay display
 )
 
 // Singleton ML Kit scanner for optimized performance
@@ -115,7 +122,7 @@ fun CameraScannerScreen(
                 title = { Text("QR Code Scanner") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -140,7 +147,8 @@ fun CameraScannerScreen(
                             scannerViewModel.processScan(qrContent)
                         },
                         isFlashlightOn = isFlashlightOn,
-                        onFlashlightToggle = { isFlashlightOn = !isFlashlightOn }
+                        onFlashlightToggle = { isFlashlightOn = !isFlashlightOn },
+                        scannerViewModel = scannerViewModel // Phase 4.1: Pass ViewModel for overlay/haptic
                     )
                 } else {
                     // Permission denied state
@@ -334,17 +342,63 @@ fun ScanResultCard(result: ScanResult) {
 fun CameraPreview(
     onQRCodeDetected: (String) -> Unit,
     isFlashlightOn: Boolean,
-    onFlashlightToggle: () -> Unit
+    onFlashlightToggle: () -> Unit,
+    scannerViewModel: ScannerViewModel // Phase 4.1: ViewModel for overlay/haptic feedback
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    
+    // Phase 4.1: Observe scan status for overlay and haptic feedback
+    val showOverlay by scannerViewModel.showOverlay.collectAsState()
+    val lastScanStatus by scannerViewModel.lastScanStatus.collectAsState()
+    
+    // Phase 4.1: Haptic feedback using Vibrator service
+    val vibrator = remember { 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(Vibrator::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+    }
+    
+    // Phase 4.1: Trigger haptic feedback when scan status changes
+    LaunchedEffect(lastScanStatus) {
+        lastScanStatus?.let { status ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val effect = when (status) {
+                    is ScannerViewModel.ScanStatus.Success -> 
+                        VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
+                    is ScannerViewModel.ScanStatus.Duplicate -> 
+                        VibrationEffect.createWaveform(longArrayOf(0, 30, 50, 30), -1)
+                    is ScannerViewModel.ScanStatus.Invalid -> 
+                        VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE)
+                }
+                vibrator.vibrate(effect)
+            } else {
+                // Fallback for older devices
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(50)
+            }
+        }
+    }
     
     // Store camera reference for flashlight control
     var camera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
     
     // Check if camera has flash capability
     var hasFlash by remember { mutableStateOf(false) }
+    
+    // Create executor for image analysis - tied to composable lifecycle to prevent thread leak
+    val imageAnalyzerExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+    
+    // Cleanup executor when composable leaves composition
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            imageAnalyzerExecutor.shutdown()
+        }
+    }
     
     // Handle flashlight control with error handling
     LaunchedEffect(isFlashlightOn, camera) {
@@ -383,7 +437,7 @@ fun CameraPreview(
                         .build()
                         .also {
                             // Use background thread for better performance
-                            it.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy ->
+                            it.setAnalyzer(imageAnalyzerExecutor) { imageProxy ->
                                 processImageProxyOptimized(imageProxy, onQRCodeDetected)
                             }
                         }
@@ -407,6 +461,84 @@ fun CameraPreview(
             },
             modifier = Modifier.fillMaxSize()
         )
+        
+        // Phase 4.1: Animated overlay for immediate scan feedback (600ms duration)
+        AnimatedVisibility(
+            visible = showOverlay,
+            enter = fadeIn(animationSpec = tween(200)) + scaleIn(
+                initialScale = 0.5f,
+                animationSpec = tween(300, easing = FastOutSlowInEasing)
+            ),
+            exit = fadeOut(animationSpec = tween(300))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> 
+                                Color.Green.copy(alpha = 0.2f)
+                            is ScannerViewModel.ScanStatus.Duplicate -> 
+                                Color.Yellow.copy(alpha = 0.2f)
+                            is ScannerViewModel.ScanStatus.Invalid -> 
+                                Color.Red.copy(alpha = 0.2f)
+                            null -> Color.Transparent
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> Icons.Default.CheckCircle
+                            is ScannerViewModel.ScanStatus.Duplicate -> Icons.Default.Warning
+                            is ScannerViewModel.ScanStatus.Invalid -> Icons.Default.Close
+                            null -> Icons.Default.Close
+                        },
+                        contentDescription = when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> "Successfully collected"
+                            is ScannerViewModel.ScanStatus.Duplicate -> "Already collected"
+                            is ScannerViewModel.ScanStatus.Invalid -> "Invalid receipt"
+                            null -> null
+                        },
+                        tint = when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> Color.Green
+                            is ScannerViewModel.ScanStatus.Duplicate -> Color.Yellow
+                            is ScannerViewModel.ScanStatus.Invalid -> Color.Red
+                            null -> Color.White
+                        },
+                        modifier = Modifier.size(120.dp)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Display receipt number
+                    Text(
+                        text = when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> 
+                                "Receipt #${(lastScanStatus as ScannerViewModel.ScanStatus.Success).receiptNumber} Scanned"
+                            is ScannerViewModel.ScanStatus.Duplicate -> 
+                                "Receipt #${(lastScanStatus as ScannerViewModel.ScanStatus.Duplicate).receiptNumber} Already Collected"
+                            is ScannerViewModel.ScanStatus.Invalid -> 
+                                "Invalid Receipt"
+                            null -> ""
+                        },
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> Color.Green
+                            is ScannerViewModel.ScanStatus.Duplicate -> Color.Yellow
+                            is ScannerViewModel.ScanStatus.Invalid -> Color.Red
+                            null -> Color.White
+                        },
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
         
         // Flashlight toggle button (only show if camera has flash)
         if (hasFlash) {
