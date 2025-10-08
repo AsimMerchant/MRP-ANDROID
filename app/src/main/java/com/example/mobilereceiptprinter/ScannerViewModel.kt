@@ -31,8 +31,8 @@ class ScannerViewModel(
      * Phase 4.1: Scan status for immediate feedback
      */
     sealed class ScanStatus {
-        object Success : ScanStatus()
-        object Duplicate : ScanStatus()
+        data class Success(val receiptNumber: Int) : ScanStatus()
+        data class Duplicate(val receiptNumber: Int) : ScanStatus()
         object Invalid : ScanStatus()
     }
     
@@ -87,8 +87,10 @@ class ScannerViewModel(
                     
                     // Phase 4.1: Set scan status for overlay + haptic feedback
                     _lastScanStatus.value = when {
-                        scanResult.isValid -> ScanStatus.Success
-                        scanResult.receiptInfo.contains("already collected", ignoreCase = true) -> ScanStatus.Duplicate
+                        scanResult.isValid && scanResult.receiptNumber != null -> 
+                            ScanStatus.Success(scanResult.receiptNumber)
+                        scanResult.receiptInfo.contains("already collected", ignoreCase = true) && scanResult.receiptNumber != null -> 
+                            ScanStatus.Duplicate(scanResult.receiptNumber)
                         else -> ScanStatus.Invalid
                     }
                     
@@ -172,10 +174,10 @@ class ScannerViewModel(
             )
         }
         
-        // Validate receipt exists in database
-        val isValidReceipt = validateReceiptExists(receiptId)
+        // Fetch receipt from database
+        val receipt = getReceiptById(receiptId)
         
-        if (!isValidReceipt) {
+        if (receipt == null) {
             return ScanResult(
                 qrContent = qrContent.take(20) + "...",
                 timestamp = getCurrentTimestamp(),
@@ -192,7 +194,8 @@ class ScannerViewModel(
                 qrContent = qrContent.take(20) + "...",
                 timestamp = getCurrentTimestamp(),
                 isValid = false,
-                receiptInfo = "Receipt already collected"
+                receiptInfo = "Receipt already collected",
+                receiptNumber = receipt.receiptNumber // Pass receipt number for overlay
             )
         }
         
@@ -203,8 +206,21 @@ class ScannerViewModel(
             qrContent = qrContent,
             timestamp = getCurrentTimestamp(),
             isValid = true,
-            receiptInfo = "Receipt #${receiptId.take(8)} - Successfully collected!"
+            receiptInfo = "Receipt #${receipt.receiptNumber} - Successfully collected!",
+            receiptNumber = receipt.receiptNumber // Pass receipt number for overlay
         )
+    }
+    
+    /**
+     * Get receipt by ID from database
+     */
+    private suspend fun getReceiptById(receiptId: String): Receipt? {
+        return try {
+            database.receiptDao().getReceiptById(receiptId)
+        } catch (e: Exception) {
+            android.util.Log.e("ScannerVM", "Error fetching receipt: ${e.message}")
+            null
+        }
     }
     
     /**

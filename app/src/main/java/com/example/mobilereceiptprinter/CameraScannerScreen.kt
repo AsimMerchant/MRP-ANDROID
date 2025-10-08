@@ -57,7 +57,8 @@ data class ScanResult(
     val qrContent: String,
     val timestamp: String,
     val isValid: Boolean,
-    val receiptInfo: String
+    val receiptInfo: String,
+    val receiptNumber: Int? = null // Receipt number for overlay display
 )
 
 // Singleton ML Kit scanner for optimized performance
@@ -476,27 +477,56 @@ fun CameraPreview(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = when (lastScanStatus) {
-                        is ScannerViewModel.ScanStatus.Success -> Icons.Default.CheckCircle
-                        is ScannerViewModel.ScanStatus.Duplicate -> Icons.Default.Warning
-                        is ScannerViewModel.ScanStatus.Invalid -> Icons.Default.Close
-                        null -> Icons.Default.Close
-                    },
-                    contentDescription = when (lastScanStatus) {
-                        is ScannerViewModel.ScanStatus.Success -> "Successfully collected"
-                        is ScannerViewModel.ScanStatus.Duplicate -> "Already collected"
-                        is ScannerViewModel.ScanStatus.Invalid -> "Invalid receipt"
-                        null -> null
-                    },
-                    tint = when (lastScanStatus) {
-                        is ScannerViewModel.ScanStatus.Success -> Color.Green
-                        is ScannerViewModel.ScanStatus.Duplicate -> Color.Yellow
-                        is ScannerViewModel.ScanStatus.Invalid -> Color.Red
-                        null -> Color.White
-                    },
-                    modifier = Modifier.size(120.dp)
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> Icons.Default.CheckCircle
+                            is ScannerViewModel.ScanStatus.Duplicate -> Icons.Default.Warning
+                            is ScannerViewModel.ScanStatus.Invalid -> Icons.Default.Close
+                            null -> Icons.Default.Close
+                        },
+                        contentDescription = when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> "Successfully collected"
+                            is ScannerViewModel.ScanStatus.Duplicate -> "Already collected"
+                            is ScannerViewModel.ScanStatus.Invalid -> "Invalid receipt"
+                            null -> null
+                        },
+                        tint = when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> Color.Green
+                            is ScannerViewModel.ScanStatus.Duplicate -> Color.Yellow
+                            is ScannerViewModel.ScanStatus.Invalid -> Color.Red
+                            null -> Color.White
+                        },
+                        modifier = Modifier.size(120.dp)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Display receipt number
+                    Text(
+                        text = when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> 
+                                "Receipt #${(lastScanStatus as ScannerViewModel.ScanStatus.Success).receiptNumber} Scanned"
+                            is ScannerViewModel.ScanStatus.Duplicate -> 
+                                "Receipt #${(lastScanStatus as ScannerViewModel.ScanStatus.Duplicate).receiptNumber} Already Collected"
+                            is ScannerViewModel.ScanStatus.Invalid -> 
+                                "Invalid Receipt"
+                            null -> ""
+                        },
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = when (lastScanStatus) {
+                            is ScannerViewModel.ScanStatus.Success -> Color.Green
+                            is ScannerViewModel.ScanStatus.Duplicate -> Color.Yellow
+                            is ScannerViewModel.ScanStatus.Invalid -> Color.Red
+                            null -> Color.White
+                        },
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
         
