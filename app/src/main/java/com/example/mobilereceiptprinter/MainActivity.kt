@@ -14,8 +14,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -554,9 +552,8 @@ Volunteer: $volunteer
 
 """.trimIndent()
 
-    // Clean version for preview display (without ESC/POS commands)
-    fun buildReceiptPreviewText(qrCode: String = "") = """
-${if (qrCode.isNotEmpty()) "[QR CODE]\n" else ""}
+    // Clean version for preview display (without ESC/POS commands or QR code)
+    fun buildReceiptPreviewText() = """
 RECEIPT #$receiptNumber     
 Biller: $biller
 Volunteer: $volunteer
@@ -988,8 +985,7 @@ AMOUNT: Rs. $amount
         if (showPreview && !showPrintingDialog) {
             item(key = "receipt_preview") {
                 ReceiptPreviewCard(
-                    receiptPreviewText = buildReceiptPreviewText(currentQRCode),
-                    qrCode = currentQRCode
+                    receiptPreviewText = buildReceiptPreviewText()
                 )
             }
         }
@@ -1019,7 +1015,7 @@ AMOUNT: Rs. $amount
                             )
                         ) {
                             Text(
-                                text = buildReceiptPreviewText(currentQRCode),
+                                text = buildReceiptPreviewText(),
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                                 ),
@@ -1098,7 +1094,7 @@ private fun SuggestionCard(
 }
 
 @Composable
-private fun ReceiptPreviewCard(receiptPreviewText: String, qrCode: String = "") {
+private fun ReceiptPreviewCard(receiptPreviewText: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
@@ -1127,51 +1123,6 @@ private fun ReceiptPreviewCard(receiptPreviewText: String, qrCode: String = "") 
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                         )
                     )
-                    
-                    // Display QR Code if available (Phase 3)
-                    if (qrCode.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        // Generate and display QR code bitmap with proper memory management
-                        val qrBitmap = remember(qrCode) {
-                            QRCodeGenerator.generateQRBitmap(qrCode, 120)
-                        }
-                        
-                        // Clean up bitmap when composable leaves composition
-                        DisposableEffect(qrBitmap) {
-                            onDispose {
-                                qrBitmap?.recycle()
-                            }
-                        }
-                        
-                        if (qrBitmap != null) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    "QR Code",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Image(
-                                    bitmap = qrBitmap.asImageBitmap(),
-                                    contentDescription = "Receipt QR Code",
-                                    modifier = Modifier.size(120.dp)
-                                )
-                                Text(
-                                    qrCode,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-                        }
-                    }
                 }
             }
         }
