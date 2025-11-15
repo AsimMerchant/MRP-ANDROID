@@ -7,6 +7,7 @@ import androidx.room.Update
 import androidx.room.Delete
 import androidx.room.OnConflictStrategy
 import androidx.room.Transaction
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ReceiptDao {
@@ -97,6 +98,14 @@ interface ReceiptDao {
     
     @Query("SELECT * FROM receipts WHERE isCollected = 0 ORDER BY receiptNumber DESC")
     suspend fun getUncollectedReceiptsList(): List<Receipt>
+    
+    // Collection Code System: Search receipts by collection code (last N chars of QR hash)
+    @Query("""
+        SELECT * FROM receipts 
+        WHERE UPPER(substr(qrCode, -:codeLength)) LIKE UPPER(:searchCode) || '%'
+        ORDER BY lastModified DESC
+    """)
+    fun searchByCollectionCode(searchCode: String, codeLength: Int): Flow<List<Receipt>>
     
     // Performance-optimized query for Reports screen with 10K+ receipts
     // Returns aggregated summary per biller instead of loading all receipts

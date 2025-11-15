@@ -58,3 +58,4 @@ proguard/
 
 # Version control leftovers
 .svn/
+.obsidian/

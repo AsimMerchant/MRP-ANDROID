@@ -66,6 +66,60 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 
+/**
+ * CollectionCodeSettings - SharedPreferences helper for Collection Code System
+ * 
+ * Manages user preferences for:
+ * - Collection code length (4-8 characters)
+ * - QR code printing toggle (on/off)
+ */
+object CollectionCodeSettings {
+    private const val PREFS_NAME = "collection_code_prefs"
+    private const val KEY_CODE_LENGTH = "code_length"
+    private const val KEY_PRINT_QR = "print_qr_enabled"
+    
+    /**
+     * Get the configured collection code length
+     * @return Code length (4-8), defaults to 4
+     */
+    fun getCodeLength(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_CODE_LENGTH, 4)
+    }
+    
+    /**
+     * Set the collection code length
+     * @param length Code length (4-8 characters)
+     */
+    fun setCodeLength(context: Context, length: Int) {
+        val clampedLength = length.coerceIn(4, 8)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_CODE_LENGTH, clampedLength)
+            .apply()
+    }
+    
+    /**
+     * Check if QR code printing is enabled
+     * @return true if QR codes should be printed on receipts, false otherwise (default: false)
+     */
+    fun isPrintQREnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_PRINT_QR, false)
+    }
+    
+    /**
+     * Set QR code printing preference
+     * @param enabled true to print QR codes on receipts, false to print collection code only
+     */
+    fun setPrintQREnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_PRINT_QR, enabled)
+            .apply()
+    }
+}
+
 sealed class Screen(val route: String) {
     object Landing : Screen("landing")
     object Receipt : Screen("receipt")
@@ -73,6 +127,8 @@ sealed class Screen(val route: String) {
     object NetworkSync : Screen("network_sync")
     object Scanner : Screen("scanner") // Phase 4: QR Code Scanner
     object CollectionReport : Screen("collection_report") // Phase 4: Collection Summary
+    object ManualCollection : Screen("manual_collection") // Collection Code System
+    object Settings : Screen("settings") // Collection Code Settings
 }
 
 class MainActivity : ComponentActivity() {
@@ -172,6 +228,8 @@ fun MainApp() {
             composable(Screen.Receipt.route) { ReceiptScreen(navController) }
             composable(Screen.Reports.route) { ReportsScreen(navController) }
             composable(Screen.NetworkSync.route) { NetworkSyncScreen(navController) }
+            composable(Screen.Settings.route) { SettingsScreen(navController) }
+            composable(Screen.ManualCollection.route) { ManualCollectionScreen(navController) }
             composable(Screen.Scanner.route) { 
                 CameraScannerScreen(
                     onNavigateBack = { navController.popBackStack() }
@@ -339,6 +397,22 @@ fun LandingScreen(navController: NavHostController) {
             }
         }
 
+        // Manual Collection Button
+        item {
+            OutlinedButton(
+                onClick = { navController.navigate(Screen.ManualCollection.route) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.secondary
+                )
+            ) {
+                Text("⌨️ Manual Collection", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
         // Show message when no printer is selected
         if (savedPrinterAddress == null) {
             item {
@@ -416,6 +490,22 @@ fun LandingScreen(navController: NavHostController) {
                 )
             ) {
                 Text("📊 Collection Report", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
+        // Settings Button
+        item {
+            OutlinedButton(
+                onClick = { navController.navigate(Screen.Settings.route) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.secondary
+                )
+            ) {
+                Text("⚙️ Settings", style = MaterialTheme.typography.bodyLarge)
             }
         }
 
@@ -531,7 +621,9 @@ fun ReceiptScreen(navController: NavHostController) {
 
     // Build receipt text dynamically when printing (uses latest values)
     fun buildReceiptText(date: String, time: String, qrCode: String = "") = """
-${if (qrCode.isNotEmpty()) {
+\\u001B\\u0061\\u0001\\u001B\\u0021\\u0038${QRCodeGenerator.getCollectionCode(qrCode, CollectionCodeSettings.getCodeLength(context))}\\u001B\\u0021\\u0000\\u001B\\u0061\\u0000
+
+${if (qrCode.isNotEmpty() && CollectionCodeSettings.isPrintQREnabled(context)) {
     QRCodeGenerator.generateThermalPrinterQR(qrCode) + "\n"
 } else {
     ""
@@ -1060,6 +1152,357 @@ AMOUNT: Rs. $amount
                 }
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ManualCollectionScreen(navController: NavHostController) {
+    val context = LocalContext.current
+    val database = remember { AppDatabase.getDatabase(context) }
+    val coroutineScope = rememberCoroutineScope()
+    
+    var searchCode by remember { mutableStateOf("") }
+    val codeLength = CollectionCodeSettings.getCodeLength(context)
+    
+    // Live search results using Flow
+    val searchResults by remember(searchCode, codeLength) {
+        if (searchCode.length >= 2) {
+            database.receiptDao().searchByCollectionCode(searchCode, codeLength)
+        } else {
+            MutableStateFlow(emptyList())
+        }
+    }.collectAsState(initial = emptyList())
+    
+    var showCollectionDialog by remember { mutableStateOf(false) }
+    var selectedReceipt by remember { mutableStateOf<Receipt?>(null) }
+    var collectionStatus by remember { mutableStateOf("") }
+    
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Manual Collection") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.navigateUp() }) {
+                        Text("←", style = MaterialTheme.typography.headlineMedium)
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Instructions
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Text(
+                    text = "Enter the collection code from the receipt to find and collect it.",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            
+            // Search input
+            OutlinedTextField(
+                value = searchCode,
+                onValueChange = { searchCode = it.uppercase() },
+                label = { Text("Collection Code") },
+                placeholder = { Text("Enter code (e.g., C2B9)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                supportingText = {
+                    Text("Min. 2 characters • Code length: $codeLength")
+                }
+            )
+            
+            // Results section
+            when {
+                searchCode.length < 2 -> {
+                    // Empty state
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Enter at least 2 characters to search",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                searchResults.isEmpty() -> {
+                    // No results
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "No receipts found",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Try a different code",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    // Results list
+                    Text(
+                        text = "${searchResults.size} receipt(s) found",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(searchResults) { receipt ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (!receipt.isCollected) {
+                                            selectedReceipt = receipt
+                                            showCollectionDialog = true
+                                        }
+                                    },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (receipt.isCollected)
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    else
+                                        MaterialTheme.colorScheme.surface
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Receipt #${receipt.receiptNumber}",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Code: ${QRCodeGenerator.getCollectionCode(receipt.qrCode, codeLength)}",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = "Biller: ${receipt.biller}",
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                        Text(
+                                            text = "Amount: ${receipt.amount}",
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                        Text(
+                                            text = "${receipt.date} ${receipt.time}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    
+                                    if (receipt.isCollected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Collected",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Collection confirmation dialog
+        if (showCollectionDialog && selectedReceipt != null) {
+            AlertDialog(
+                onDismissRequest = { showCollectionDialog = false },
+                title = { Text("Collect Receipt") },
+                text = {
+                    Column {
+                        Text("Receipt #${selectedReceipt!!.receiptNumber}")
+                        Text("Amount: ${selectedReceipt!!.amount}")
+                        Text("Biller: ${selectedReceipt!!.biller}")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Mark this receipt as collected?")
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                try {
+                                    database.receiptDao().updateCollectionStatus(
+                                        selectedReceipt!!.id,
+                                        true
+                                    )
+                                    collectionStatus = "Receipt collected successfully"
+                                    showCollectionDialog = false
+                                    // Clear search to refresh results
+                                    searchCode = ""
+                                } catch (e: Exception) {
+                                    collectionStatus = "Error: ${e.message}"
+                                }
+                            }
+                        }
+                    ) {
+                        Text("Collect")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showCollectionDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+        
+        // Status message
+        if (collectionStatus.isNotEmpty()) {
+            LaunchedEffect(collectionStatus) {
+                delay(3000)
+                collectionStatus = ""
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(navController: NavHostController) {
+    val context = LocalContext.current
+    
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Settings") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.navigateUp() }) {
+                        Text("←", style = MaterialTheme.typography.headlineMedium)
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            // Collection Code Settings Section
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Collection Code Settings",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Code Length Slider (Task 7)
+                var codeLength by remember { 
+                    mutableStateOf(CollectionCodeSettings.getCodeLength(context).toFloat()) 
+                }
+                
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Code Length: ${codeLength.toInt()} characters",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    
+                    Slider(
+                        value = codeLength,
+                        onValueChange = { codeLength = it },
+                        onValueChangeFinished = {
+                            CollectionCodeSettings.setCodeLength(context, codeLength.toInt())
+                        },
+                        valueRange = 4f..8f,
+                        steps = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Text(
+                        text = "Shorter codes are easier to type, but longer codes reduce collision probability.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // QR Printing Toggle (Task 8)
+                var printQREnabled by remember { 
+                    mutableStateOf(CollectionCodeSettings.isPrintQREnabled(context)) 
+                }
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Print QR Code on Receipt",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
+                        Text(
+                            text = "Enable to print QR code on receipts. Collection code is always printed.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    Switch(
+                        checked = printQREnabled,
+                        onCheckedChange = { enabled ->
+                            printQREnabled = enabled
+                            CollectionCodeSettings.setPrintQREnabled(context, enabled)
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
