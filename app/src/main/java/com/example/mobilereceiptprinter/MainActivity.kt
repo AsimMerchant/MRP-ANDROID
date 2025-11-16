@@ -1,6 +1,8 @@
 package com.example.mobilereceiptprinter
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.Intent
@@ -13,6 +15,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -141,6 +145,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
+        // Create notification channel for auto-sync service
+        createAutoSyncNotificationChannel()
+        
         // Initialize multi-device components
         initializeMultiDeviceComponents()
         
@@ -148,6 +155,25 @@ class MainActivity : ComponentActivity() {
             MobileReceiptPrinterTheme {
                 MainApp()
             }
+        }
+    }
+    
+    /**
+     * Create notification channel for auto-sync foreground service
+     */
+    private fun createAutoSyncNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "auto_sync_channel",
+                "Auto-Sync Service",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Shows auto-sync service status"
+                setShowBadge(false)
+            }
+            
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
         }
     }
     
@@ -1418,6 +1444,39 @@ fun ManualCollectionScreen(navController: NavHostController) {
 @Composable
 fun SettingsScreen(navController: NavHostController) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    // Auto-sync state
+    var autoSyncEnabled by remember { 
+        mutableStateOf(AutoSyncSettings.isAutoSyncEnabled(context)) 
+    }
+    var syncInterval by remember { 
+        mutableStateOf(AutoSyncSettings.getSyncIntervalMinutes(context)) 
+    }
+    var wifiOnlySync by remember { 
+        mutableStateOf(AutoSyncSettings.isWifiOnlySync(context)) 
+    }
+    
+    // Notification permission launcher for Android 13+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            // Permission granted, start service
+            autoSyncEnabled = true
+            AutoSyncSettings.setAutoSyncEnabled(context, true)
+            val intent = Intent(context, AutoSyncService::class.java)
+            intent.putExtra("interval_ms", syncInterval * 60000L)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        } else {
+            // Permission denied, keep toggle off
+            autoSyncEnabled = false
+        }
+    }
     
     Scaffold(
         topBar = {
@@ -1435,6 +1494,7 @@ fun SettingsScreen(navController: NavHostController) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
@@ -1522,6 +1582,199 @@ fun SettingsScreen(navController: NavHostController) {
                         onCheckedChange = { enabled ->
                             printQREnabled = enabled
                             CollectionCodeSettings.setPrintQREnabled(context, enabled)
+                        }
+                    )
+                }
+            }
+            
+            // Auto-Sync Settings Section
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Auto-Sync Settings",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Enable Auto-Sync Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Enable Auto-Sync",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
+                        Text(
+                            text = "Automatically sync with network devices at regular intervals",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        
+                        if (autoSyncEnabled) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Service runs while app is active",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            )
+                        }
+                    }
+                    
+                    Switch(
+                        checked = autoSyncEnabled,
+                        onCheckedChange = { enabled ->
+                            if (enabled) {
+                                // Check notification permission for Android 13+
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    val hasPermission = (context as? ComponentActivity)
+                                        ?.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == 
+                                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                                    
+                                    if (!hasPermission) {
+                                        // Request permission
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        return@Switch
+                                    }
+                                }
+                                
+                                // Permission granted or not needed, start service
+                                autoSyncEnabled = true
+                                AutoSyncSettings.setAutoSyncEnabled(context, enabled)
+                                val intent = Intent(context, AutoSyncService::class.java)
+                                intent.putExtra("interval_ms", syncInterval * 60000L)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    context.startForegroundService(intent)
+                                } else {
+                                    context.startService(intent)
+                                }
+                            } else {
+                                // Stop service
+                                autoSyncEnabled = false
+                                AutoSyncSettings.setAutoSyncEnabled(context, enabled)
+                                context.stopService(Intent(context, AutoSyncService::class.java))
+                            }
+                        }
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Sync Interval Dropdown
+                var expandedInterval by remember { mutableStateOf(false) }
+                val intervals = listOf(1, 2, 5, 10, 15)
+                
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Sync Interval",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    
+                    ExposedDropdownMenuBox(
+                        expanded = expandedInterval,
+                        onExpandedChange = { expandedInterval = !expandedInterval && autoSyncEnabled }
+                    ) {
+                        OutlinedTextField(
+                            value = "$syncInterval minute${if (syncInterval > 1) "s" else ""}",
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = autoSyncEnabled,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expandedInterval) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                        )
+                        
+                        ExposedDropdownMenu(
+                            expanded = expandedInterval,
+                            onDismissRequest = { expandedInterval = false }
+                        ) {
+                            intervals.forEach { interval ->
+                                DropdownMenuItem(
+                                    text = { 
+                                        Text("$interval minute${if (interval > 1) "s" else ""}") 
+                                    },
+                                    onClick = {
+                                        syncInterval = interval
+                                        AutoSyncSettings.setSyncIntervalMinutes(context, interval)
+                                        expandedInterval = false
+                                        
+                                        // Restart service with new interval if running
+                                        if (autoSyncEnabled) {
+                                            context.stopService(Intent(context, AutoSyncService::class.java))
+                                            val intent = Intent(context, AutoSyncService::class.java)
+                                            intent.putExtra("interval_ms", interval * 60000L)
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                context.startForegroundService(intent)
+                                            } else {
+                                                context.startService(intent)
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    
+                    Text(
+                        text = "How often to discover and sync with devices",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // WiFi Only Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "WiFi Only",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
+                        Text(
+                            text = "Only sync when connected to WiFi network",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    Switch(
+                        checked = wifiOnlySync,
+                        onCheckedChange = { enabled ->
+                            wifiOnlySync = enabled
+                            AutoSyncSettings.setWifiOnlySync(context, enabled)
                         }
                     )
                 }

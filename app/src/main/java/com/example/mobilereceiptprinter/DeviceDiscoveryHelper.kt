@@ -292,6 +292,49 @@ class DeviceDiscoveryHelper(
     }
 
     /**
+     * Perform discovery and sync with timeout
+     * Used by auto-sync service for periodic sync operations
+     * 
+     * @param discoveryTimeoutMs How long to wait for device discovery (default 30 seconds)
+     * @return SyncResult with success status and sync statistics
+     */
+    suspend fun discoverAndSync(discoveryTimeoutMs: Long = 30000L): SyncResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                Log.d(TAG, "Starting auto-sync: discovery timeout ${discoveryTimeoutMs}ms")
+                
+                // Start discovery
+                startDiscovery()
+                
+                // Wait for devices to be discovered
+                delay(discoveryTimeoutMs)
+                
+                // Sync with all discovered devices
+                val result = syncWithAllDevices()
+                
+                // Stop discovery
+                stopDiscovery()
+                
+                Log.d(TAG, "Auto-sync completed: ${result.devicesSync} devices, ${result.receiptsSync} receipts")
+                return@withContext result
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Discovery and sync failed: ${e.message}", e)
+                stopDiscovery()
+                return@withContext SyncResult(
+                    success = false,
+                    timestamp = System.currentTimeMillis(),
+                    devicesSync = 0,
+                    receiptsSync = 0,
+                    collectionsSync = 0,
+                    conflicts = 0,
+                    errorMessage = e.message
+                )
+            }
+        }
+    }
+
+    /**
      * Synchronize data with a specific device
      */
     private suspend fun syncWithDevice(device: DiscoveredDevice, database: AppDatabase): SyncResult {
