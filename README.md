@@ -2,7 +2,7 @@
 
 A modern Android application built with Kotlin and Jetpack Compose for creating and printing receipts via Bluetooth thermal printers with QR code generation and cross-device collection tracking. Perfect for small businesses, events, and mobile payment collection with multi-device synchronization.
 
-**Current Status**: UI Performance Optimization In Progress 📱⚡ | Camera Resource Management Fixed | Memory Optimizations Applied | Version 1.4.4
+**Current Status**: Auto-Sync Feature Completed 🔄⚡ | Version 1.4.7 | Automatic Periodic Synchronization Active
 
 ## 🌟 Features
 
@@ -26,6 +26,16 @@ A modern Android application built with Kotlin and Jetpack Compose for creating 
 - **Database Integrity**: ✅ **COMPLETED** - Cascade delete operations and orphaned record cleanup
 - **Audit Trail**: ✅ **COMPLETED** - Complete collection audit with statistics and percentage tracking
 
+### Phase 5: Auto-Sync Feature 🔄 **COMPLETED** (v1.4.7)
+- **Automatic Periodic Sync**: ✅ **COMPLETED** - Foreground service with configurable intervals (1-15 minutes)
+- **WiFi-Only Mode**: ✅ **COMPLETED** - Optional constraint to prevent mobile data usage
+- **Notification System**: ✅ **COMPLETED** - Real-time sync status with timestamps and device counts
+- **Permission Handling**: ✅ **COMPLETED** - Runtime notification permission for Android 13+
+- **Service Lifecycle**: ✅ **COMPLETED** - START_STICKY foreground service with proper cleanup
+- **User Controls**: ✅ **COMPLETED** - Settings UI with enable toggle, interval dropdown, and WiFi toggle
+- **Passive Device Support**: ✅ **COMPLETED** - One coordinator device syncs with all passive devices
+- **30-Second Discovery**: ✅ **COMPLETED** - Timeout-based discovery matching manual sync behavior
+
 ### QR Scanner Enhancement 📱 **COMPLETED**
 - **Paytm-Style Scanning**: ✅ **COMPLETED** - Instant QR detection without targeting overlay or positioning constraints
 - **Camera Repositioning**: ✅ **COMPLETED** - Moved camera from bottom 1/3 to top 1/3 of screen as requested
@@ -37,6 +47,9 @@ A modern Android application built with Kotlin and Jetpack Compose for creating 
 ### Data Management
 - **Multi-Device Database**: Enhanced Room database with UUID-based global sync system ✨
 - **Cross-Device Sync**: Offline-first local network synchronization across up to 6 devices 🌐
+- **Automatic Periodic Sync**: ✅ **NEW** - Configurable auto-sync (1-15 min intervals) with foreground service 🔄
+- **WiFi-Only Sync**: ✅ **NEW** - Optional constraint to prevent mobile data usage during auto-sync
+- **Sync Notifications**: ✅ **NEW** - Real-time status updates with device/receipt counts and timestamps
 - **Receipt History**: View all created receipts organized by biller with collection tracking
 - **Reports & Analytics**: Comprehensive reporting with totals and receipt counts per biller
 - **Collection Tracking**: QR code-based receipt collection system with tamper-resistant validation 📱
@@ -76,6 +89,8 @@ app/src/main/java/com/example/mobilereceiptprinter/
 ├── DeviceManager.kt            # Device identification and role management
 ├── SyncStatusManager.kt        # Multi-device sync status and monitoring
 ├── DeviceDiscoveryHelper.kt    # Network discovery and sync infrastructure ✨
+├── AutoSyncService.kt          # Foreground service for automatic periodic sync 🔄
+├── AutoSyncSettings.kt         # SharedPreferences wrapper for auto-sync configuration
 ├── QRCodeGenerator.kt          # QR code generation and thermal printer integration ✨
 ├── DeviceTestScreen.kt         # Database migration testing interface
 ├── BluetoothPrinterHelper.kt   # Bluetooth printer communication
@@ -183,6 +198,10 @@ app/src/main/java/com/example/mobilereceiptprinter/
 The app requests the following permissions:
 - `BLUETOOTH_CONNECT` - Connect to Bluetooth devices (Android 12+)
 - `BLUETOOTH_SCAN` - Scan for Bluetooth devices (Android 12+)
+- `POST_NOTIFICATIONS` - Show auto-sync notifications (Android 13+)
+- `FOREGROUND_SERVICE` - Run auto-sync service in foreground
+- `FOREGROUND_SERVICE_DATA_SYNC` - Data synchronization service type
+- `ACCESS_NETWORK_STATE` - Check WiFi connectivity for WiFi-only mode
 - Legacy Bluetooth permissions for older Android versions
 
 ## 📱 Usage Guide
@@ -210,6 +229,20 @@ The app requests the following permissions:
 4. **Delete Options**:
    - Delete individual receipts from the edit dialog
    - Delete all receipts for a biller using "Delete All"
+
+### Auto-Sync Configuration 🔄 **NEW**
+1. **Access Settings** - Tap "Settings" from the landing screen
+2. **Enable Auto-Sync** - Toggle "Enable Auto-Sync" (requests notification permission on Android 13+)
+3. **Set Sync Interval** - Choose from 1, 2, 5, 10, or 15 minutes
+4. **WiFi-Only Mode** - Enable to sync only when connected to WiFi (saves mobile data)
+5. **Monitor Sync Status** - Check persistent notification for sync results
+6. **Passive Device Setup** - Keep app open on other devices (no auto-sync needed)
+7. **Expected Notifications**:
+   - "Next sync in X minute(s)" - Waiting for next cycle
+   - "Syncing..." - Discovery and sync in progress
+   - "✅ X devices, Y receipts • HH:MM:SS" - Successful sync with counts
+   - "No devices found • HH:MM:SS" - No passive devices available
+   - "Waiting for WiFi..." - WiFi-only mode active, not connected
 
 ### Receipt Format
 Receipts are formatted for thermal printers with:
@@ -255,6 +288,20 @@ Receipts are formatted for thermal printers with:
 - Verify all permissions are granted
 - Clear app data and restart
 
+**Auto-Sync Not Working** 🔄 **NEW**
+- Grant notification permission when prompted (Android 13+)
+- Check WiFi-only toggle if not on WiFi
+- Ensure passive devices have app open (at least in background)
+- Verify sync interval is set correctly (1-15 minutes)
+- Check notification shows "Next sync in X minute(s)" status
+
+**No Devices Found During Auto-Sync** 🔄 **NEW**
+- Confirm passive devices are on same WiFi network
+- Ensure passive devices have app open (not force-closed)
+- Check both devices are discoverable on local network
+- Wait for full 30-second discovery timeout
+- Restart both devices if NSD discovery fails
+
 ## 🤝 Contributing
 
 ### Development Setup
@@ -299,23 +346,23 @@ For support, bug reports, or feature requests:
 
 ## 🚀 Development Status
 
-**Current Version**: 1.4.3  
-**Feature Branch**: `feature/phase3`  
-**Development Phase**: Phase 4 Complete + Performance Optimized ⚡ + ANR-Free
+**Current Version**: 1.4.7  
+**Feature Branch**: `main`  
+**Development Phase**: Phase 5 Complete - Auto-Sync Live 🔄⚡
 
-### ✅ Completed Features (Phase 1 & 2)
+### ✅ Completed Features (All Phases)
 - **Multi-Device Database Schema**: UUID-based global sync system
 - **Cross-Device Sync Infrastructure**: mDNS discovery with JSON protocol
+- **Automatic Periodic Sync**: Foreground service with 1-15 minute configurable intervals
+- **WiFi-Only Sync Mode**: Optional constraint to save mobile data
 - **Device Role Management**: Flexible biller/collector role switching
 - **Network Status Monitoring**: Real-time sync progress and connection tracking
 - **Conflict Resolution**: Timestamp and version-based conflict handling
-- **Testing Framework**: Comprehensive database migration and network sync testing
-
-### 🔄 In Development (Phase 3+)
-- **QR Code Generation**: Receipt QR codes for scanning-based collection
+- **QR Code Generation & Scanning**: Complete collection tracking system
 - **Camera Scanner**: ML Kit-based QR code scanning for collectors
-- **Collection Interface**: Network-aware collector UI with sync status
-- **Reconciliation Reports**: Multi-device reporting with network-wide statistics
+- **Collection Reports**: Multi-device reporting with comprehensive statistics
+- **Notification System**: Real-time auto-sync status with Android 13+ permission handling
+- **Testing Framework**: Comprehensive database migration and network sync testing
 
 ### 📱 Multi-Device Architecture
 - **Offline-First Design**: No internet dependency, local WiFi network only
@@ -325,7 +372,7 @@ For support, bug reports, or feature requests:
 
 ---
 
-**Version**: 15  
-**Last Updated**: October 2025  
+**Version**: 1.4.7  
+**Last Updated**: November 2025  
 **Minimum Android Version**: 12.0 (API 31)  
 **Target Android Version**: 14 (API 36)
