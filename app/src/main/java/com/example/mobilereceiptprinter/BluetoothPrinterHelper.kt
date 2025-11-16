@@ -50,8 +50,17 @@ class BluetoothPrinterHelper(private val context: Context) {
         // ESC ! 48 (0x30) - Double height, double width, bold
         processedText = processedText.replace("\\\\u001B\\\\u0021\\\\u0030", "\u001B!\u0030")
 
+        // ESC ! 56 (0x38) - Larger text mode
+        processedText = processedText.replace("\\\\u001B\\\\u0021\\\\u0038", "\u001B!\u0038")
+
         // ESC ! 0 - Reset to normal
         processedText = processedText.replace("\\\\u001B\\\\u0021\\\\u0000", "\u001B!\u0000")
+
+        // ESC a 0 - Left align
+        processedText = processedText.replace("\\\\u001B\\\\u0061\\\\u0000", "\u001B\u0061\u0000")
+
+        // ESC a 1 - Center align
+        processedText = processedText.replace("\\\\u001B\\\\u0061\\\\u0001", "\u001B\u0061\u0001")
 
         return processedText.toByteArray(Charsets.ISO_8859_1)
     }

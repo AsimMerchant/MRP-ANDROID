@@ -622,7 +622,6 @@ fun ReceiptScreen(navController: NavHostController) {
     // Build receipt text dynamically when printing (uses latest values)
     fun buildReceiptText(date: String, time: String, qrCode: String = "") = """
 \\u001B\\u0061\\u0001\\u001B\\u0021\\u0038${QRCodeGenerator.getCollectionCode(qrCode, CollectionCodeSettings.getCodeLength(context))}\\u001B\\u0021\\u0000\\u001B\\u0061\\u0000
-
 ${if (qrCode.isNotEmpty() && CollectionCodeSettings.isPrintQREnabled(context)) {
     QRCodeGenerator.generateThermalPrinterQR(qrCode) + "\n"
 } else {
@@ -1355,10 +1354,35 @@ fun ManualCollectionScreen(navController: NavHostController) {
                         onClick = {
                             coroutineScope.launch {
                                 try {
-                                    database.receiptDao().updateCollectionStatus(
-                                        selectedReceipt!!.id,
-                                        true
+                                    val receiptId = selectedReceipt!!.id
+                                    val currentTime = System.currentTimeMillis()
+                                    val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                                    val timeFormat = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                                    val now = java.util.Date(currentTime)
+                                    val deviceManager = DeviceManager(context)
+                                    
+                                    // Create collection record
+                                    val collectedReceipt = CollectedReceipt(
+                                        receiptId = receiptId,
+                                        collectorName = "Manual Entry User",
+                                        collectionTime = timeFormat.format(now),
+                                        collectionDate = dateFormat.format(now),
+                                        scannedBy = "Manual Entry",
+                                        collectorDeviceId = deviceManager.getDeviceId(),
+                                        syncStatus = "PENDING",
+                                        lastModified = currentTime
                                     )
+                                    
+                                    // Insert collection record
+                                    database.collectedReceiptDao().insert(collectedReceipt)
+                                    
+                                    // Update receipt status
+                                    database.receiptDao().updateCollectionStatusWithTimestamp(
+                                        receiptId = receiptId,
+                                        isCollected = true,
+                                        timestamp = currentTime
+                                    )
+                                    
                                     collectionStatus = "Receipt collected successfully"
                                     showCollectionDialog = false
                                     // Clear search to refresh results
