@@ -227,6 +227,30 @@ object QRCodeGenerator {
     }
     
     /**
+     * Extract collection code from QR code content
+     * Returns the last N characters of the QR hash for manual collection entry
+     * 
+     * Example: QR="MRP_123_DEV1_A3F7C2B9" with length=4 returns "C2B9"
+     * 
+     * @param qrCode The full QR code content string
+     * @param length Number of characters to extract (4-8 recommended)
+     * @return Last N characters of the hash in uppercase, or empty string if invalid
+     */
+    fun getCollectionCode(qrCode: String, length: Int): String {
+        if (length < 1) return ""
+        if (!validateQRFormat(qrCode)) return ""
+        
+        // Extract the hash portion (last part after splitting by separator)
+        val parts = qrCode.split(QR_SEPARATOR)
+        if (parts.size != 4) return ""
+        
+        val hash = parts[3]
+        
+        // Return last N characters of the hash in uppercase
+        return hash.takeLast(length).uppercase()
+    }
+    
+    /**
      * Generate SHA-256 hash for tamper detection
      * 
      * @param input Input string to hash
