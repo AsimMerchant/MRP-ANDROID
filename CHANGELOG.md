@@ -5,6 +5,51 @@ All notable changes to the Mobile Receipt Printer project will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2025-12-13 ✅ COMPLETED - Collection Projects
+
+### Added - Collection Projects Feature 📦
+- **Project-Based Collection Grouping**: Organize receipt collections into separate projects with independent totals
+- **Auto-Generated Project Names**: Automatically names projects as "Project 1", "Project 2", etc.
+- **Active Project Selection**: Select one active project before collecting receipts
+- **Collection Projects Screen**: 
+  - View all projects with summary cards (receipt count, total amount)
+  - Create new projects with auto-increment naming
+  - Switch between projects via selection dialog
+  - Visual indicators for active project (checkmark icon)
+- **Project Details View**:
+  - Project summary (name, creation date/time, receipt count, total amount)
+  - Full list of collected receipts with details (number, biller, amount, date/time)
+  - Navigation from projects list
+- **Active Project Indicators**: 
+  - Manual Collection screen shows active project name or warning if none selected
+  - QR Scanner screen displays active project or warning card
+- **Database Integration**:
+  - New `collection_projects` table with migration from v4 to v5
+  - `projectId` field added to `collected_receipts` table
+  - SharedPreferences for active project persistence
+- **Navigation**: New menu item "📦 Collection Projects" on Landing Screen
+
+### Technical Implementation
+- **Database Schema**: CollectionProject entity with 7 fields (id, name, createdDate, createdTime, deviceId, syncStatus, lastModified)
+- **Migration**: MIGRATION_4_5 creates collection_projects table and adds projectId column with default ""
+- **DAO Layer**: CollectionProjectDao with CRUD operations, summary queries with LEFT JOIN, validation queries
+- **State Management**: ActiveProjectSettings object for SharedPreferences access
+- **UI Components**: 
+  - CollectionProjectsScreen with project list and create functionality
+  - ProjectDetailsScreen with summary and receipts list
+  - Project selection dialog with radio buttons
+  - Warning cards when no active project selected
+- **Integration Points**:
+  - ManualCollectionScreen passes projectId when creating CollectedReceipt
+  - ScannerViewModel uses active project ID during QR code collection
+  - CameraScannerScreen displays active project indicator
+
+### User Experience Improvements
+- **Problem Solved**: Users can now organize collections into separate projects instead of one combined total
+- **Workflow**: Create project → Select as active → Collect receipts → View project-specific totals
+- **Visual Feedback**: Color-coded cards (green for active project, red for no selection warning)
+- **Data Accuracy**: Each project maintains independent receipt lists and totals
+
 ## [1.5.0] - 2025-12-13 ✅ COMPLETED - Retry Print Feature
 
 ### Added - Retry Print Last Receipt 🔄

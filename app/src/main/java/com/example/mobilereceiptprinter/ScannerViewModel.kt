@@ -1,5 +1,6 @@
 package com.example.mobilereceiptprinter
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +25,8 @@ import java.util.*
  */
 class ScannerViewModel(
     private val database: AppDatabase,
-    private val deviceManager: DeviceManager
+    private val deviceManager: DeviceManager,
+    private val context: Context
 ) : ViewModel() {
     
     /**
@@ -259,7 +261,10 @@ class ScannerViewModel(
             val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
             val now = Date(currentTime)
             
-            // Create collection record
+            // Get active project ID
+            val activeProjectId = ActiveProjectSettings.getActiveProjectId(context) ?: ""
+            
+            // Create collection record with project ID
             val collectedReceipt = CollectedReceipt(
                 receiptId = receiptId,
                 collectorName = "Scanner User", // TODO: Get from user preferences
@@ -267,7 +272,8 @@ class ScannerViewModel(
                 collectionDate = dateFormat.format(now),
                 scannedBy = "QR Scanner", // User who scanned the receipt
                 collectorDeviceId = deviceManager.getDeviceId(),
-                syncStatus = "PENDING"
+                syncStatus = "PENDING",
+                projectId = activeProjectId
             )
             
             // Insert collection record

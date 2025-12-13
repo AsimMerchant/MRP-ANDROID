@@ -13,9 +13,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Suggestion::class, 
         CollectedReceipt::class, 
         Collector::class, 
-        DeviceSyncLog::class
+        DeviceSyncLog::class,
+        CollectionProject::class
     ], 
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,6 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun collectedReceiptDao(): CollectedReceiptDao
     abstract fun collectorDao(): CollectorDao
     abstract fun deviceSyncLogDao(): DeviceSyncLogDao
+    abstract fun collectionProjectDao(): CollectionProjectDao
 
     companion object {
         @Volatile
@@ -81,6 +83,27 @@ abstract class AppDatabase : RoomDatabase() {
                 // Update existing receipts to have proper UUIDs
                 // Note: In production, you'd want to preserve existing data
                 // For now, we'll use fallback to destructive migration
+            }
+        }
+
+        // Migration from version 4 to 5 (adding Collection Projects feature)
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Create collection_projects table
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS collection_projects (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        createdDate TEXT NOT NULL,
+                        createdTime TEXT NOT NULL,
+                        deviceId TEXT NOT NULL,
+                        syncStatus TEXT NOT NULL DEFAULT 'PENDING',
+                        lastModified INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
+                
+                // Add projectId column to collected_receipts table
+                database.execSQL("ALTER TABLE collected_receipts ADD COLUMN projectId TEXT NOT NULL DEFAULT ''")
             }
         }
 
