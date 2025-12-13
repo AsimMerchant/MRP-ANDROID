@@ -2,12 +2,19 @@
 
 A modern Android application built with Kotlin and Jetpack Compose for creating and printing receipts via Bluetooth thermal printers with QR code generation and cross-device collection tracking. Perfect for small businesses, events, and mobile payment collection with multi-device synchronization.
 
-**Current Status**: Auto-Sync Feature Completed 🔄⚡ | Version 1.4.7 | Automatic Periodic Synchronization Active
+**Current Status**: Retry Print Feature Completed 🔄 | Version 1.5.0 | Print Failure Recovery Active
+
+## 📥 Download
+
+[![Download APK](https://img.shields.io/badge/Download-APK%20v1.5.0-brightgreen?style=for-the-badge&logo=android)](https://github.com/AsimMerchant/MRP-ANDROID/raw/main/release-artifacts/app-debug.apk)
+
+**Requirements**: Android 12+ (API 31)
 
 ## 🌟 Features
 
 ### Core Functionality ✅ IMPLEMENTED
 - **Receipt Creation**: Generate professional receipts with biller, volunteer, and amount information
+- **🔄 Retry Print**: Sticky bottom button to re-print last receipt when print fails - eliminates duplicate data entry
 - **⚡ Instant UI Response**: Optimized dialog appearance (~1ms) with async keyboard dismissal preventing 50-200ms blocking (98% improvement)
 - **🚀 ANR-Free Printing**: Bluetooth operations moved to IO dispatcher preventing "App Not Responding" errors during print operations
 - **QR Code Generation**: ✅ **COMPLETED** - Automatic unique QR code generation with format `MRP_{UUID}_{DeviceID}_{Hash}` ✨
@@ -17,6 +24,15 @@ A modern Android application built with Kotlin and Jetpack Compose for creating 
 - **Receipt Preview**: View formatted receipts with visual QR code bitmap display before printing
 - **Printer Management**: Save and manage preferred Bluetooth printer connections
 - **100% Offline Operation**: ✅ **COMPLETED** - All QR generation works without internet connection 📶
+
+### Retry Print Feature 🔄 **NEW** (v1.5.0)
+- **Print Failure Recovery**: ✅ **COMPLETED** - Re-print last receipt when print fails (paper jam, out of paper, connection error)
+- **Sticky Bottom Button**: ✅ **COMPLETED** - Always visible at bottom of screen, no scrolling needed
+- **Smart State Tracking**: ✅ **COMPLETED** - Automatically tracks most recent receipt from database
+- **Navigation Persistence**: ✅ **COMPLETED** - Retry target persists across screen navigation
+- **No Duplicate Receipts**: ✅ **COMPLETED** - Re-prints existing receipt, prevents duplicate database entries
+- **Accurate Tally**: ✅ **COMPLETED** - End-of-day reports remain accurate, no manual corrections needed
+- **Form Handling**: ✅ **COMPLETED** - Clears volunteer & amount on success, preserves on failure
 
 ### Phase 4 Features ✅ **COMPLETED**
 - **QR Code Scanner**: ✅ **COMPLETED** - In-app camera scanner with ML Kit barcode detection 📸
@@ -47,9 +63,9 @@ A modern Android application built with Kotlin and Jetpack Compose for creating 
 ### Data Management
 - **Multi-Device Database**: Enhanced Room database with UUID-based global sync system ✨
 - **Cross-Device Sync**: Offline-first local network synchronization across up to 6 devices 🌐
-- **Automatic Periodic Sync**: ✅ **NEW** - Configurable auto-sync (1-15 min intervals) with foreground service 🔄
-- **WiFi-Only Sync**: ✅ **NEW** - Optional constraint to prevent mobile data usage during auto-sync
-- **Sync Notifications**: ✅ **NEW** - Real-time status updates with device/receipt counts and timestamps
+- **Automatic Periodic Sync**: ✅ **COMPLETED** - Configurable auto-sync (1-15 min intervals) with foreground service 🔄
+- **WiFi-Only Sync**: ✅ **COMPLETED** - Optional constraint to prevent mobile data usage during auto-sync
+- **Sync Notifications**: ✅ **COMPLETED** - Real-time status updates with device/receipt counts and timestamps
 - **Receipt History**: View all created receipts organized by biller with collection tracking
 - **Reports & Analytics**: Comprehensive reporting with totals and receipt counts per biller
 - **Collection Tracking**: QR code-based receipt collection system with tamper-resistant validation 📱
@@ -64,6 +80,7 @@ A modern Android application built with Kotlin and Jetpack Compose for creating 
 - **Intuitive Navigation**: Easy navigation between creation, reports, and settings screens
 - **Permission Handling**: Seamless Bluetooth permission management for Android 12+
 - **Performance Optimized**: Efficient rendering with lazy loading and memoization
+- **Sticky Controls**: Important actions (retry print) always visible at screen bottom
 
 ## 🏗️ Architecture
 

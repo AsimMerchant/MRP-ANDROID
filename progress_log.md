@@ -1,9 +1,246 @@
-# Progress Log - Collection Code System Implementation
+# Progress Log - Retry Print Feature Implementation
+
+**Feature**: Retry Print Last Receipt v1.5.0  
+**Feature Branch**: feature/retry_print  
+**Started**: December 13, 2025  
+**Status**: ✅ Completed  
+**Project**: Mobile Receipt Printer (MRP) - Print Failure Recovery
+
+---
+
+## Overview
+
+Implemented sticky bottom button to re-print last receipt when print fails due to printer errors (out of paper, connection issues, etc.). Eliminates need to create duplicate receipts, maintaining accurate end-of-day tally.
+
+---
+
+## Task 1: Planning & Requirements Gathering ✅
+
+**Date**: December 13, 2025  
+**Status**: Completed  
+**Time Taken**: 30 minutes
+
+### Requirements Defined
+- Button always visible at bottom of Create Receipt screen
+- Disabled when database has no receipts
+- Prints most recent receipt from database (not form data)
+- Clears volunteer & amount fields only on successful print
+- Never populates form fields
+- Persists across screen navigation
+
+### Technical Decisions
+- **UI Pattern**: Sticky bottom button using Box+LazyColumn layout
+- **State Management**: Track lastReceiptId and isRetryPrintEnabled
+- **Data Source**: Database Receipt entity, not form state variables
+- **Print Format**: Reuse existing ESC/POS formatting with double-escaped sequences
+
+---
+
+## Task 2: Implementation - State Variables ✅
+
+**Date**: December 13, 2025  
+**Status**: Completed  
+**File**: `MainActivity.kt` (lines 607-609)
+
+### Changes Made
+- Added `lastReceiptId` state variable to track retry target
+- Added `isRetryPrintEnabled` state variable for button state
+
+### Code Added
+```kotlin
+// Retry print state variables
+var lastReceiptId by remember { mutableStateOf<String?>(null) }
+var isRetryPrintEnabled by remember { mutableStateOf(false) }
+```
+
+---
+
+## Task 3: Load Last Receipt on Screen Open ✅
+
+**Date**: December 13, 2025  
+**Status**: Completed  
+**File**: `MainActivity.kt` (lines 958-968)
+
+### Changes Made
+- Added LaunchedEffect to load most recent receipt from database
+- Sets retry button enabled/disabled based on database state
+- Runs on screen open and after navigation
+
+### Code Added
+```kotlin
+// Load last receipt for retry button
+LaunchedEffect(Unit) {
+    scope.launch {
+        val db = AppDatabase.getDatabase(context)
+        val lastReceipt = withContext(Dispatchers.IO) {
+            db.receiptDao().getAllReceipts().firstOrNull()
+        }
+        lastReceiptId = lastReceipt?.id
+        isRetryPrintEnabled = lastReceipt != null
+    }
+}
+```
+
+---
+
+## Task 4: Update Last Receipt ID After Creation ✅
+
+**Date**: December 13, 2025  
+**Status**: Completed  
+**File**: `MainActivity.kt` (lines 918-920)
+
+### Changes Made
+- Updated `createReceiptAndPrint()` to set lastReceiptId after database insert
+- Enables retry button after first receipt created
+
+### Code Added
+```kotlin
+// Update retry button target
+lastReceiptId = receiptId
+isRetryPrintEnabled = true
+```
+
+---
+
+## Task 5: Create Helper Function ✅
+
+**Date**: December 13, 2025  
+**Status**: Completed  
+**File**: `MainActivity.kt` (lines 684-713)
+
+### Changes Made
+- Created `buildReceiptTextFromReceipt(receipt: Receipt)` function
+- Uses double-escaped sequences (`\\u001B`) matching existing format
+- Reads from Receipt entity fields, not form state
+- Respects QR toggle settings from CollectionCodeSettings
+
+### Technical Details
+- **ESC/POS Compatibility**: Double-escaped sequences for BluetoothPrinterHelper.convertEscPosText()
+- **Data Source**: Receipt object (original date, time, amounts, QR code)
+- **Format**: Identical to buildReceiptText() but parameter-based
+
+---
+
+## Task 6: Create Retry Print Function ✅
+
+**Date**: December 13, 2025  
+**Status**: Completed  
+**File**: `MainActivity.kt` (lines 825-905)
+
+### Changes Made
+- Created `retryPrintLastReceipt()` function with complete logic
+- Validates permissions and printer selection
+- Loads receipt from database using lastReceiptId
+- Prints using buildReceiptTextFromReceipt() helper
+- Handles success/failure with proper form clearing
+
+### Features Implemented
+- Permission checking (Bluetooth, printer selected)
+- Database retrieval with error handling
+- Async printing on Dispatchers.IO (ANR prevention)
+- Progress dialog with status updates
+- Success: Clear volunteer & amount fields
+- Failure: Preserve all form fields
+
+---
+
+## Task 7: Add Sticky Bottom Button UI ✅
+
+**Date**: December 13, 2025  
+**Status**: Completed  
+**File**: `MainActivity.kt` (lines 1101-1270)
+
+### Changes Made
+- Wrapped LazyColumn with Box for layering
+- Added bottom padding to LazyColumn (72.dp) for button space
+- Created sticky button with Alignment.BottomCenter
+- Secondary color scheme for visual distinction
+- Dynamic text ("Re-printing..." during operation)
+
+### UI Structure
+```
+Box {
+    LazyColumn (padding bottom = 72.dp) {
+        // Form content
+    }
+    Button (align = BottomCenter) {
+        // Retry Print Last Receipt
+    }
+}
+```
+
+---
+
+## Testing Results ✅
+
+### Test Case 1: Print Failure → Retry → Success
+- ✅ Create receipt → Print fails
+- ✅ Form fields preserved (biller, volunteer, amount)
+- ✅ Click retry → Print success
+- ✅ Volunteer & amount cleared, biller stays
+
+### Test Case 2: Navigation Persistence
+- ✅ Create receipt → Navigate away → Return
+- ✅ Retry button still points to correct receipt
+
+### Test Case 3: Multiple Receipts
+- ✅ Create Receipt #1, then #2, then #3
+- ✅ Retry button targets Receipt #3 (most recent)
+
+### Test Case 4: Empty Database
+- ✅ Fresh install → Button disabled
+- ✅ Create first receipt → Button enabled
+
+---
+
+## Files Modified
+
+1. **`app/build.gradle.kts`**
+   - versionCode: 19 → 20
+   - versionName: "1.4.7" → "1.5.0"
+
+2. **`MainActivity.kt`**
+   - Added state variables (2 lines)
+   - Added LaunchedEffect for loading (11 lines)
+   - Updated createReceiptAndPrint (3 lines)
+   - Added buildReceiptTextFromReceipt helper (30 lines)
+   - Added retryPrintLastReceipt function (81 lines)
+   - Restructured UI with Box+sticky button (30 lines)
+
+3. **`CHANGELOG.md`**
+   - Added v1.5.0 entry with feature details
+
+4. **`README.md`**
+   - Updated version to 1.5.0
+   - Added Retry Print feature section
+   - Updated feature list
+
+---
+
+## Metrics
+
+- **Total Implementation Time**: ~2 hours
+- **Lines of Code Added**: ~157 lines
+- **Files Modified**: 4 files
+- **Build Status**: ✅ Success
+- **Test Coverage**: 4 test cases passed
+
+---
+
+## Next Steps
+
+- Monitor user feedback on retry print feature
+- Consider adding retry count tracking for analytics
+- Potential future enhancement: Show which receipt will be re-printed in button tooltip
+
+---
+
+# Previous Progress Log - Collection Code System Implementation
 
 **Feature**: Collection Code System v1.4.6  
 **Feature Branch**: feature/toggle_QRcode  
 **Started**: November 15, 2025  
-**Status**: In Progress  
+**Status**: Completed  
 **Project**: Mobile Receipt Printer (MRP) - Collection Code System
 
 ---

@@ -5,6 +5,39 @@ All notable changes to the Mobile Receipt Printer project will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2025-12-13 ✅ COMPLETED - Retry Print Feature
+
+### Added - Retry Print Last Receipt 🔄
+- **Sticky Bottom Button**: Always-visible "Retry Print Last Receipt" button at bottom of Create Receipt screen
+- **Smart State Management**: Button automatically tracks most recent receipt from database
+- **Navigation Persistence**: Retry target persists across screen navigation (leave/return maintains last receipt)
+- **Print Failure Recovery**: Eliminates need to create duplicate receipts when print fails due to printer issues
+- **Form Handling**: 
+  - Success: Clears volunteer & amount fields (keeps biller populated)
+  - Failure: Maintains all form fields for user convenience
+- **Database Integrity**: Re-prints existing receipt without creating duplicates
+- **Progress Feedback**: Reuses existing printing dialog with "Re-printing..." status updates
+- **Permission Handling**: Same Bluetooth and printer validation as regular print
+- **End-of-Day Accuracy**: Prevents duplicate receipt entries in tally reports
+
+### Technical Implementation
+- **Architecture**: Sticky bottom button using Box+LazyColumn layout with `Alignment.BottomCenter`
+- **State Variables**: `lastReceiptId` and `isRetryPrintEnabled` track retry target
+- **Helper Function**: `buildReceiptTextFromReceipt()` builds ESC/POS text from Receipt entity (not form state)
+- **ESC/POS Compatibility**: Uses double-escaped sequences (`\\u001B`) matching existing print format
+- **Async Operations**: All printing on `Dispatchers.IO` preventing ANR
+- **Database Queries**: `getReceiptById()` fetches receipt for re-printing
+- **UI Spacing**: LazyColumn bottom padding (72.dp) prevents content overlap with sticky button
+- **Button States**: Disabled when database empty or during active print operation
+- **Color Scheme**: Secondary color to visually distinguish from primary "Create & Print" button
+
+### User Experience Improvements
+- **Problem Solved**: Previously, failed prints required creating duplicate receipts causing tally errors
+- **Workflow**: Print fails → Click retry → Success (no duplicate data entry)
+- **Accessibility**: Button always visible at screen bottom, no scrolling required
+- **Visual Feedback**: "Re-printing..." text during operation, success/failure messages
+- **Data Accuracy**: Original receipt data printed (date, time, QR code, amounts) not current form values
+
 ## [1.4.2] - 2025-10-02 ✅ COMPLETED - UI/UX Optimization
 
 ### Fixed - Keyboard Dismissal Reliability ⌨️
