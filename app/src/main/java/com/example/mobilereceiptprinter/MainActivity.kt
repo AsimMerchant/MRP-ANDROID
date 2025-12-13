@@ -608,6 +608,10 @@ fun ReceiptScreen(navController: NavHostController) {
     var showPrintingDialog by remember { mutableStateOf(false) }
     var printingProgress by remember { mutableStateOf("") }
     var isCreatingAndPrinting by remember { mutableStateOf(false) }
+    
+    // Retry print state variables
+    var lastReceiptId by remember { mutableStateOf<String?>(null) }
+    var isRetryPrintEnabled by remember { mutableStateOf(false) }
 
     // Bluetooth permission launcher for Android 12+
     val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
@@ -677,6 +681,36 @@ Volunteer: $volunteer
 AMOUNT: Rs. $amount
 
 """.trimIndent()
+
+    // Build receipt text from Receipt object for re-printing
+    fun buildReceiptTextFromReceipt(receipt: Receipt): String {
+        val codeLength = CollectionCodeSettings.getCodeLength(context)
+        val collectionCode = QRCodeGenerator.getCollectionCode(receipt.qrCode, codeLength)
+        val isPrintQREnabled = CollectionCodeSettings.isPrintQREnabled(context)
+        
+        return """
+\\u001B\\u0061\\u0001\\u001B\\u0021\\u0038${collectionCode}\\u001B\\u0021\\u0000\\u001B\\u0061\\u0000
+${if (receipt.qrCode.isNotEmpty() && isPrintQREnabled) {
+    QRCodeGenerator.generateThermalPrinterQR(receipt.qrCode) + "\n"
+} else {
+    ""
+}}=======================
+\\u001B\\u0021\\u0030 RECEIPT #${receipt.receiptNumber} \\u001B\\u0021\\u0000
+=======================
+Date: ${receipt.date}
+Time: ${receipt.time}
+-----------------------
+Biller: ${receipt.biller}
+-----------------------
+Volunteer: ${receipt.volunteer}
+-----------------------
+\\u001B\\u0021\\u0030AMOUNT: Rs. ${receipt.amount}\\u001B\\u0021\\u0000
+=======================
+
+
+
+""".trimIndent()
+    }
 
     fun saveLastPrinter(address: String) {
         prefs.edit { putString("saved_printer_address", address) }
@@ -781,6 +815,86 @@ AMOUNT: Rs. $amount
                 printingProgress = "❌ Error: ${e.message}"
                 kotlinx.coroutines.delay(2000)
                 showPrintingDialog = false
+                isCreatingAndPrinting = false
+            }
+        }
+    }
+
+    // Retry print last receipt function
+    fun retryPrintLastReceipt() {
+        if (lastReceiptId == null) return
+        
+        if (!bluetoothPermissionGranted) {
+            printingProgress = "❌ Bluetooth permission not granted"
+            showPrintingDialog = true
+            isCreatingAndPrinting = false
+            return
+        }
+
+        if (savedPrinterAddress == null) {
+            printingProgress = "❌ No printer selected. Please select a printer first."
+            showPrintingDialog = true
+            isCreatingAndPrinting = false
+            return
+        }
+
+        isCreatingAndPrinting = true
+        showPrintingDialog = true
+        printingProgress = "Loading receipt..."
+
+        (context as ComponentActivity).lifecycleScope.launch {
+            delay(1)
+            
+            val db = AppDatabase.getDatabase(context)
+            val receipt = withContext(Dispatchers.IO) {
+                db.receiptDao().getReceiptById(lastReceiptId!!)
+            }
+            
+            if (receipt == null) {
+                printingProgress = "❌ Receipt not found in database"
+                isCreatingAndPrinting = false
+                delay(2000)
+                showPrintingDialog = false
+                return@launch
+            }
+            
+            printingProgress = "Connecting to printer..."
+            
+            val savedDevice = printerHelper.getPairedDevices()?.find { 
+                it.address == savedPrinterAddress 
+            }
+            
+            if (savedDevice != null) {
+                printingProgress = "Re-printing receipt #${receipt.receiptNumber}..."
+                
+                val result = withContext(Dispatchers.IO) {
+                    val receiptText = buildReceiptTextFromReceipt(receipt)
+                    val connected = printerHelper.connectToDevice(savedDevice)
+                    if (connected) {
+                        val printed = printerHelper.printText(receiptText)
+                        printerHelper.closeConnection()
+                        printed
+                    } else {
+                        false
+                    }
+                }
+                
+                if (result) {
+                    printingProgress = "✓ Receipt re-printed successfully!"
+                    // Clear form fields on success (same behavior as Create & Print)
+                    volunteer = ""
+                    amount = ""
+                    showPreview = false
+                    isCreatingAndPrinting = false
+                    delay(2000)
+                    showPrintingDialog = false
+                } else {
+                    printingProgress = "❌ Print failed. Please try again."
+                    isCreatingAndPrinting = false
+                    // Form stays unchanged on failure
+                }
+            } else {
+                printingProgress = "❌ Printer not found"
                 isCreatingAndPrinting = false
             }
         }
@@ -911,6 +1025,10 @@ AMOUNT: Rs. $amount
             }
             saveBillerData(biller, receiptNumber, amountValue)
             
+            // Update retry button target
+            lastReceiptId = receiptId
+            isRetryPrintEnabled = true
+            
             // Start printing process
             printingProgress = "Connecting to printer..."
             
@@ -951,6 +1069,18 @@ AMOUNT: Rs. $amount
             volunteerSuggestions.addAll(volunteers.takeLast(50))
         }
     }
+    
+    // Load last receipt for retry button
+    LaunchedEffect(Unit) {
+        scope.launch {
+            val db = AppDatabase.getDatabase(context)
+            val lastReceipt = withContext(Dispatchers.IO) {
+                db.receiptDao().getAllReceipts().firstOrNull()
+            }
+            lastReceiptId = lastReceipt?.id
+            isRetryPrintEnabled = lastReceipt != null
+        }
+    }
 
     // Memoize filtered suggestions for better performance
     val filteredBillerSuggestions = remember(biller, billerSuggestions.size) {
@@ -967,13 +1097,15 @@ AMOUNT: Rs. $amount
         }.take(5)
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 4.dp) // Reduced vertical padding from 8.dp to 4.dp
-            .windowInsetsPadding(WindowInsets.systemBars),
-        verticalArrangement = Arrangement.spacedBy(10.dp) // Reduced spacing from 12.dp to 10.dp
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp, vertical = 4.dp)
+                .padding(bottom = 72.dp) // Space for sticky button
+                .windowInsetsPadding(WindowInsets.systemBars),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
         item(key = "form_card") {
             // Form card
             Card(
@@ -1111,6 +1243,30 @@ AMOUNT: Rs. $amount
             Spacer(modifier = Modifier.height(12.dp)) // Reduced bottom spacer from 20.dp to 12.dp
         }
     }
+    
+    // Sticky bottom button (always visible)
+    if (isRetryPrintEnabled || lastReceiptId != null) {
+        Button(
+            onClick = { retryPrintLastReceipt() },
+            enabled = isRetryPrintEnabled && !isCreatingAndPrinting,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .height(56.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondary,
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Text(
+                if (isCreatingAndPrinting) "Re-printing..." else "Retry Print Last Receipt",
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+    }
+}
     
     // Printing Progress Dialog
     if (showPrintingDialog) {
