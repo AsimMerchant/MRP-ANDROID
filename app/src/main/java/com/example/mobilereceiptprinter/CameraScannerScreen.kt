@@ -89,7 +89,23 @@ fun CameraScannerScreen(
     val database = AppDatabase.getDatabase(context)
     val deviceManager = DeviceManager(context)
     val scannerViewModel = remember {
-        ScannerViewModel(database, deviceManager)
+        ScannerViewModel(database, deviceManager, context)
+    }
+    
+    // Active project support
+    val activeProjectId = ActiveProjectSettings.getActiveProjectId(context)
+    var activeProjectName by remember { mutableStateOf("") }
+    
+    // Load active project name
+    LaunchedEffect(activeProjectId) {
+        if (activeProjectId != null) {
+            val project = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                database.collectionProjectDao().getProjectById(activeProjectId)
+            }
+            activeProjectName = project?.name ?: ""
+        } else {
+            activeProjectName = ""
+        }
     }
     
     var hasCameraPermission by remember {
@@ -227,6 +243,59 @@ fun CameraScannerScreen(
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.padding(top = 4.dp)
                                 )
+                            }
+                        }
+                    }
+                    
+                    // Active Project Indicator or Warning
+                    item {
+                        if (activeProjectId != null && activeProjectName.isNotEmpty()) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "📦",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                    Text(
+                                        text = "Active Project: $activeProjectName",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                }
+                            }
+                        } else {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "⚠️ No Active Project Selected",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Text(
+                                        text = "Please select a project from Collection Projects.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    )
+                                }
                             }
                         }
                     }

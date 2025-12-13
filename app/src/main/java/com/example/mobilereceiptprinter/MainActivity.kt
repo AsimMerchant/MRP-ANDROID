@@ -124,6 +124,55 @@ object CollectionCodeSettings {
     }
 }
 
+/**
+ * ActiveProjectSettings - SharedPreferences helper for Active Project Management
+ * 
+ * Manages the currently active collection project
+ */
+object ActiveProjectSettings {
+    private const val PREFS_NAME = "active_project_prefs"
+    private const val KEY_ACTIVE_PROJECT_ID = "active_project_id"
+    
+    /**
+     * Get the currently active project ID
+     * @return Project ID if set, null otherwise
+     */
+    fun getActiveProjectId(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val projectId = prefs.getString(KEY_ACTIVE_PROJECT_ID, null)
+        return if (projectId.isNullOrEmpty()) null else projectId
+    }
+    
+    /**
+     * Set the active project
+     * @param projectId The project ID to set as active
+     */
+    fun setActiveProjectId(context: Context, projectId: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_ACTIVE_PROJECT_ID, projectId)
+            .apply()
+    }
+    
+    /**
+     * Clear the active project (no project selected)
+     */
+    fun clearActiveProject(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_ACTIVE_PROJECT_ID)
+            .apply()
+    }
+    
+    /**
+     * Check if there is an active project set
+     * @return true if an active project is set, false otherwise
+     */
+    fun hasActiveProject(context: Context): Boolean {
+        return getActiveProjectId(context) != null
+    }
+}
+
 sealed class Screen(val route: String) {
     object Landing : Screen("landing")
     object Receipt : Screen("receipt")
@@ -133,6 +182,10 @@ sealed class Screen(val route: String) {
     object CollectionReport : Screen("collection_report") // Phase 4: Collection Summary
     object ManualCollection : Screen("manual_collection") // Collection Code System
     object Settings : Screen("settings") // Collection Code Settings
+    object CollectionProjects : Screen("collection_projects") // Collection Projects Feature
+    object ProjectDetails : Screen("project_details/{projectId}") {
+        fun createRoute(projectId: String) = "project_details/$projectId"
+    }
 }
 
 class MainActivity : ComponentActivity() {
@@ -263,6 +316,21 @@ fun MainApp() {
             }
             composable(Screen.CollectionReport.route) { 
                 CollectionReportScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.CollectionProjects.route) {
+                CollectionProjectsScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToProjectDetails = { projectId ->
+                        navController.navigate(Screen.ProjectDetails.createRoute(projectId))
+                    }
+                )
+            }
+            composable(Screen.ProjectDetails.route) { backStackEntry ->
+                val projectId = backStackEntry.arguments?.getString("projectId") ?: ""
+                ProjectDetailsScreen(
+                    projectId = projectId,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
@@ -436,6 +504,22 @@ fun LandingScreen(navController: NavHostController) {
                 )
             ) {
                 Text("⌨️ Manual Collection", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
+        // Collection Projects Button
+        item {
+            OutlinedButton(
+                onClick = { navController.navigate(Screen.CollectionProjects.route) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.tertiary
+                )
+            ) {
+                Text("📦 Collection Projects", style = MaterialTheme.typography.bodyLarge)
             }
         }
 
@@ -1343,6 +1427,22 @@ fun ManualCollectionScreen(navController: NavHostController) {
     val database = remember { AppDatabase.getDatabase(context) }
     val coroutineScope = rememberCoroutineScope()
     
+    // Active project support
+    val activeProjectId = ActiveProjectSettings.getActiveProjectId(context)
+    var activeProjectName by remember { mutableStateOf("") }
+    
+    // Load active project name
+    LaunchedEffect(activeProjectId) {
+        if (activeProjectId != null) {
+            val project = withContext(Dispatchers.IO) {
+                database.collectionProjectDao().getProjectById(activeProjectId)
+            }
+            activeProjectName = project?.name ?: ""
+        } else {
+            activeProjectName = ""
+        }
+    }
+    
     var searchCode by remember { mutableStateOf("") }
     val codeLength = CollectionCodeSettings.getCodeLength(context)
     
@@ -1378,6 +1478,55 @@ fun ManualCollectionScreen(navController: NavHostController) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Active Project Indicator or Warning
+            if (activeProjectId != null && activeProjectName.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "📦",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Text(
+                            text = "Active Project: $activeProjectName",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
+                }
+            } else {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "⚠️ No Active Project Selected",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "Please select a project from Collection Projects before collecting receipts.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            }
+            
             // Instructions
             Card(
                 colors = CardDefaults.cardColors(
@@ -1543,7 +1692,7 @@ fun ManualCollectionScreen(navController: NavHostController) {
                                     val now = java.util.Date(currentTime)
                                     val deviceManager = DeviceManager(context)
                                     
-                                    // Create collection record
+                                    // Create collection record with project ID
                                     val collectedReceipt = CollectedReceipt(
                                         receiptId = receiptId,
                                         collectorName = "Manual Entry User",
@@ -1552,7 +1701,8 @@ fun ManualCollectionScreen(navController: NavHostController) {
                                         scannedBy = "Manual Entry",
                                         collectorDeviceId = deviceManager.getDeviceId(),
                                         syncStatus = "PENDING",
-                                        lastModified = currentTime
+                                        lastModified = currentTime,
+                                        projectId = activeProjectId ?: ""
                                     )
                                     
                                     // Insert collection record

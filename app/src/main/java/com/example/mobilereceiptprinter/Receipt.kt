@@ -33,6 +33,7 @@ data class BillerSummary(
 data class CollectedReceipt(
     @PrimaryKey val id: String = UUID.randomUUID().toString(), // Global UUID
     val receiptId: String, // Foreign key to Receipt
+    val projectId: String = "", // Foreign key to CollectionProject (links collection to project)
     val collectorName: String,
     val collectionTime: String,
     val collectionDate: String,
@@ -93,4 +94,30 @@ data class CollectedReceiptWithDetails(
     val collectionTime: String,
     val collectorName: String,
     val scannedBy: String
+)
+
+/**
+ * Collection Project Entity - For grouping receipt collections into projects
+ */
+@Entity(tableName = "collection_projects")
+data class CollectionProject(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val name: String,                    // Auto-generated: "Project 1", "Project 2", etc.
+    val createdDate: String,             // Creation date
+    val createdTime: String,             // Creation time
+    val deviceId: String,                // Device that created the project
+    val syncStatus: String = "PENDING", // Sync status for multi-device support
+    val lastModified: Long = 0L          // For sync conflict resolution
+)
+
+/**
+ * Project Summary - For displaying project list with statistics
+ */
+data class ProjectSummary(
+    val projectId: String,
+    val projectName: String,
+    val receiptCount: Int,
+    val totalAmount: Double,
+    val createdDate: String,
+    val createdTime: String
 )

@@ -1,3 +1,192 @@
+# Progress Log - Collection Projects Feature Implementation
+
+**Feature**: Collection Projects v1.6.0  
+**Feature Branch**: feature/collection_project  
+**Started**: December 13, 2025  
+**Status**: ✅ Completed  
+**Project**: Mobile Receipt Printer (MRP) - Project-Based Collection Organization
+
+---
+
+## Overview
+
+Implemented Collection Projects feature to organize receipt collections into separate projects with independent totals. Each project auto-generates names ("Project 1", "Project 2"), requires selection before collecting, and maintains its own receipt list and total amount.
+
+---
+
+## Implementation Summary
+
+### Step 1-4: Database Schema & DAO Layer ✅
+**Date**: December 13, 2025  
+**Status**: Completed
+
+#### Database Changes
+- Created `CollectionProject` entity with 7 fields (id, name, createdDate, createdTime, deviceId, syncStatus, lastModified)
+- Added `ProjectSummary` data class for aggregated queries
+- Modified `CollectedReceipt` entity to include `projectId` field (default "")
+- Created MIGRATION_4_5: Creates collection_projects table, adds projectId column
+- Database version: 4 → 5
+
+#### DAO Implementation
+- Created `CollectionProjectDao` with complete CRUD operations
+- Summary query uses LEFT JOIN to show projects with 0 receipts
+- Validation queries: `isReceiptCollectedInProject()`, `hasCollectedReceipts()`
+- Added `collectionProjectDao()` accessor to AppDatabase
+
+#### SharedPreferences
+- Created `ActiveProjectSettings` object in MainActivity.kt
+- Methods: `getActiveProjectId()`, `setActiveProjectId()`, `clearActiveProject()`, `hasActiveProject()`
+- Key: "active_project_id"
+
+### Step 5-7: UI Screens & Navigation ✅
+**Date**: December 13, 2025  
+**Status**: Completed
+
+#### CollectionProjectsScreen.kt (734 lines)
+- Main screen with project list view using LazyColumn
+- Create project functionality with auto-naming ("Project ${projectCount + 1}")
+- Project selection dialog with radio buttons
+- ProjectDetailsScreen composable for individual project view
+- Summary cards showing receipt count and total amount
+- Full receipts list with details (number, biller, amount, date/time)
+
+#### Navigation Setup
+- Added `Screen.CollectionProjects` and `Screen.ProjectDetails` routes
+- Route helper: `Screen.ProjectDetails.createRoute(projectId)`
+- Added navigation composables in MainActivity.kt NavHost
+
+### Step 8: Manual Collection Integration ✅
+**Date**: December 13, 2025  
+**Status**: Completed
+
+#### ManualCollectionScreen Changes
+- Loads active project on screen open using LaunchedEffect
+- Displays green indicator card when project is active
+- Shows red warning card when no project selected
+- Passes `projectId = activeProjectId ?: ""` to CollectedReceipt
+
+### Step 9: Scanner Integration ✅
+**Date**: December 13, 2025  
+**Status**: Completed
+
+#### ScannerViewModel.kt Changes
+- Added `context` parameter to constructor
+- Uses `ActiveProjectSettings.getActiveProjectId(context)` in `markReceiptAsCollected()`
+- Passes projectId to CollectedReceipt during QR code collection
+- Added missing `import android.content.Context`
+
+#### CameraScannerScreen.kt Changes
+- Loads active project name using LaunchedEffect
+- Displays green indicator card for active project
+- Shows red warning card when no project selected
+- Passes context to ScannerViewModel constructor
+
+### Step 10: Landing Screen Menu ✅
+**Date**: December 13, 2025  
+**Status**: Completed
+
+#### LandingScreen Changes
+- Added "📦 Collection Projects" button
+- Positioned between Manual Collection and Reports
+- Uses tertiary color scheme
+- Routes to `Screen.CollectionProjects.route`
+
+### Step 11: Version & Documentation ✅
+**Date**: December 13, 2025  
+**Status**: Completed
+
+#### Version Updates
+- **versionCode**: 20 → 21
+- **versionName**: "1.5.0" → "1.6.0"
+- Updated app/build.gradle.kts
+
+#### Documentation
+- Updated CHANGELOG.md with v1.6.0 feature details
+- Updated progress_log.md with implementation summary
+
+---
+
+## Files Modified
+
+### New Files Created
+1. **CollectionProjectsScreen.kt** (734 lines)
+   - CollectionProjectsScreen composable
+   - ProjectDetailsScreen composable
+   - ProjectCard composable
+
+### Existing Files Modified
+1. **Receipt.kt**
+   - Added CollectionProject entity
+   - Added ProjectSummary data class
+   - Added projectId field to CollectedReceipt
+
+2. **AppDatabase.kt**
+   - Version 4 → 5
+   - Added CollectionProject to entities
+   - Created MIGRATION_4_5
+   - Added collectionProjectDao()
+
+3. **MainActivity.kt**
+   - Added ActiveProjectSettings object
+   - Added Screen.CollectionProjects and Screen.ProjectDetails
+   - Added navigation composables
+   - Updated ManualCollectionScreen with active project support
+   - Added Collection Projects menu button to LandingScreen
+
+4. **ScannerViewModel.kt**
+   - Added context parameter
+   - Added active project support in markReceiptAsCollected()
+   - Added Context import
+
+5. **CameraScannerScreen.kt**
+   - Added active project loading and display
+   - Updated ScannerViewModel instantiation
+
+6. **app/build.gradle.kts**
+   - versionCode: 20 → 21
+   - versionName: "1.5.0" → "1.6.0"
+
+7. **CHANGELOG.md**
+   - Added v1.6.0 section with feature details
+
+8. **progress_log.md**
+   - Added Collection Projects implementation summary
+
+---
+
+## Testing Checklist
+
+- [x] Build completes successfully
+- [ ] Database migration 4→5 executes without errors
+- [ ] Create new project with auto-generated name
+- [ ] Select project as active
+- [ ] Active project indicator appears on Manual Collection screen
+- [ ] Active project indicator appears on QR Scanner screen
+- [ ] Collect receipt via Manual Collection with active project
+- [ ] Collect receipt via QR Scanner with active project
+- [ ] View project details with receipts list
+- [ ] Project summary shows correct totals
+- [ ] Switch between projects
+- [ ] Warning appears when no project selected
+- [ ] Navigation from Landing Screen → Collection Projects
+- [ ] Navigation from Projects List → Project Details
+
+---
+
+## Technical Metrics
+
+- **Lines of Code Added**: ~800 lines
+- **Files Created**: 1
+- **Files Modified**: 8
+- **Database Version**: 4 → 5
+- **New Tables**: 1 (collection_projects)
+- **New Columns**: 1 (projectId in collected_receipts)
+- **Build Time**: ~45 seconds
+- **Implementation Steps**: 11
+- **Build Successes**: 11/11
+
+---
+
 # Progress Log - Retry Print Feature Implementation
 
 **Feature**: Retry Print Last Receipt v1.5.0  

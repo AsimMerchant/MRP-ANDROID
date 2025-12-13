@@ -2,11 +2,11 @@
 
 A modern Android application built with Kotlin and Jetpack Compose for creating and printing receipts via Bluetooth thermal printers with QR code generation and cross-device collection tracking. Perfect for small businesses, events, and mobile payment collection with multi-device synchronization.
 
-**Current Status**: Retry Print Feature Completed 🔄 | Version 1.5.0 | Print Failure Recovery Active
+**Current Status**: Collection Projects Completed 📦 | Version 1.6.0 | Project-Based Organization Active
 
 ## 📥 Download
 
-[![Download APK](https://img.shields.io/badge/Download-APK%20v1.5.0-brightgreen?style=for-the-badge&logo=android)](https://github.com/AsimMerchant/MRP-ANDROID/raw/main/release-artifacts/app-debug.apk)
+[![Download APK](https://img.shields.io/badge/Download-APK%20v1.6.0-brightgreen?style=for-the-badge&logo=android)](https://github.com/AsimMerchant/MRP-ANDROID/raw/main/release-artifacts/app-debug.apk)
 
 **Requirements**: Android 12+ (API 31)
 
@@ -33,6 +33,16 @@ A modern Android application built with Kotlin and Jetpack Compose for creating 
 - **No Duplicate Receipts**: ✅ **COMPLETED** - Re-prints existing receipt, prevents duplicate database entries
 - **Accurate Tally**: ✅ **COMPLETED** - End-of-day reports remain accurate, no manual corrections needed
 - **Form Handling**: ✅ **COMPLETED** - Clears volunteer & amount on success, preserves on failure
+
+### Collection Projects Feature 📦 **NEW** (v1.6.0)
+- **Project-Based Grouping**: ✅ **COMPLETED** - Organize receipt collections into separate projects with independent totals
+- **Auto-Generated Names**: ✅ **COMPLETED** - Automatically names projects as "Project 1", "Project 2", etc.
+- **Active Project Selection**: ✅ **COMPLETED** - Must select active project before collecting receipts
+- **Projects List View**: ✅ **COMPLETED** - View all projects with summary cards (receipt count, total amount)
+- **Project Details**: ✅ **COMPLETED** - Detailed view with receipts list, summary, creation date/time
+- **Visual Indicators**: ✅ **COMPLETED** - Active project shown in Manual Collection and QR Scanner screens
+- **Database Integration**: ✅ **COMPLETED** - New collection_projects table with migration 4→5
+- **Warning System**: ✅ **COMPLETED** - Shows alert when no active project selected
 
 ### Phase 4 Features ✅ **COMPLETED**
 - **QR Code Scanner**: ✅ **COMPLETED** - In-app camera scanner with ML Kit barcode detection 📸
